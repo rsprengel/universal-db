@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -30,9 +30,11 @@ import org.teamapps.universaldb.index.filelegacy.FileUtil;
 import org.teamapps.universaldb.index.translation.TranslatableTextFilter;
 import org.teamapps.universaldb.index.translation.TranslatableText;
 
+import javax.management.ValueExp;
 import java.io.File;
 import java.io.IOException;
 import java.util.BitSet;
+import java.util.List;
 import java.util.Map;
 
 public class TextSearchIndex {
@@ -110,9 +112,9 @@ public class TextSearchIndex {
 			doc.add(idField);
 			//doc.add(valueField);
 			//valueField.setStringValue(value);
-			Map<String, String> translationMap = value.getTranslationMap();
-			for (String language : translationMap.keySet()) {
-				String translationValue = translationMap.get(language) != null ? translationMap.get(language) : "";
+			List<String> languages = value.getLanguages();
+			for (String language : languages) {
+				String translationValue = value.getTranslation(language);
 				Field field = new Field(VALUE + "_" + language, translationValue, fieldType);
 				doc.add(field);
 			}

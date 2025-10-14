@@ -258,9 +258,8 @@ public class TranslatableTextIndex extends AbstractIndex<TranslatableText, TextF
 			if (translatableText == null) {
 				continue;
 			}
-			Map<String, String> translationMap = translatableText.getTranslationMap();
 			for (String language : rankedLanguages) {
-				if (Objects.equals(value, translationMap.get(language))) {
+				if (Objects.equals(value, translatableText.getTranslation(language))) {
 					result.set(id);
 					break;
 				}
@@ -276,10 +275,9 @@ public class TranslatableTextIndex extends AbstractIndex<TranslatableText, TextF
 			if (translatableText == null) {
 				continue;
 			}
-			Map<String, String> translationMap = translatableText.getTranslationMap();
 			boolean containsValue = false;
 			for (String language : rankedLanguages) {
-				if (Objects.equals(value, translationMap.get(language))) {
+				if (Objects.equals(value, translatableText.getTranslation(language))) {
 					containsValue = true;
 					break;
 				}

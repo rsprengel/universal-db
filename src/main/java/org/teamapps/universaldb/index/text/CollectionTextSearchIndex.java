@@ -7,9 +7,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  *      http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -79,9 +79,9 @@ public class CollectionTextSearchIndex {
 			for (FullTextIndexValue fullTextIndexValue : values) {
 				if (fullTextIndexValue.isTranslatableText()) {
 					TranslatableText translatableText = fullTextIndexValue.getTranslatableText();
-					Map<String, String> translationMap = translatableText.getTranslationMap();
-					for (String language : translationMap.keySet()) {
-						String value = translationMap.get(language) != null ? translationMap.get(language) : "";
+					List<String> languages = translatableText.getLanguages();
+					for (String language : languages) {
+						String value = translatableText.getTranslation(language);
 						Field field = new Field(fullTextIndexValue.getFieldName() + "_" + language, value, fieldType);
 						doc.add(field);
 					}

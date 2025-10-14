@@ -19,6 +19,8 @@
  */
 package org.teamapps.universaldb.index.translation;
 
+
+import org.apache.commons.lang3.StringUtils;
 import org.teamapps.universaldb.util.DataStreamUtil;
 
 import java.io.DataInputStream;
@@ -28,12 +30,25 @@ import java.util.*;
 
 public class TranslatableText {
 
-    private final static String DELIMITER = "\n<=@#!=>\n";
+    protected final static String DELIMITER = "\n<=@#!=>\n";
 
     private String originalText;
-    private String originalLanguage;
+    private final String originalLanguage;
     private String encodedValue;
-    private Map<String, String> translationMap;
+    // current test class needs access to the translationMap
+    protected Map<String, String> translationMap;
+
+    // a translation text is consistent in the following cases
+    // 1. encodedValue != null with first entry == originalLanguage/originalText and rest is the same as in translationMap
+    // 2. encodedValue != null with first entry == originalLanguage/originalText and translationMap == null
+    // 3. encodedValue == null
+    // conclusion:
+    // if originalLanguage == null then TranslatableText is null and the isNull() is true. You can't set any translation!
+    // originalText is null when originalLanguage is null or it contains the correct value (even after initialization from encodedValue)
+    // if originalLanguage != null then encodedValue is null and translationMap contains all translations or encodedValue is complete and translationMap is complete or null
+    // if translationMap != null then it contains all translations (but not necessarily the original language) and original language is set
+    // translatableMap should contain only translations and not the original language (but is not inconsistent otherwise)
+    // encodedValue must have original language as first entry and should not duplicate a language (but is not inconsistent otherwise)
 
     public static boolean isTranslatableText(String encodedValue) {
         if (encodedValue == null || (encodedValue.startsWith(DELIMITER) && encodedValue.endsWith(DELIMITER))) {
@@ -43,21 +58,28 @@ public class TranslatableText {
         }
     }
 
+    public static boolean isNull(TranslatableText text) {
+        return text==null || text.originalLanguage==null;
+    }
+
     public static TranslatableText create(String originalText, String originalLanguage) {
         return new TranslatableText(originalText, originalLanguage);
     }
 
     public TranslatableText() {
+        originalLanguage = null;
     }
 
     public TranslatableText(String originalText, String originalLanguage) {
         if (originalLanguage == null) {
             throw new RuntimeException("Error: no language for translatable text");
         }
+        if (originalLanguage.length()!=2) {
+            throw new RuntimeException("Error: language is not an iso code");
+        }
         this.originalText = originalText;
         this.originalLanguage = originalLanguage;
         this.translationMap = new HashMap<>();
-        translationMap.put(originalLanguage, originalText);
     }
 
     public TranslatableText(String encodedValue) {
@@ -65,13 +87,17 @@ public class TranslatableText {
             throw new RuntimeException("Error: invalid translation encoding:" + encodedValue);
         }
         this.encodedValue = encodedValue;
+        this.originalLanguage = parseOriginalValue();
     }
 
     public TranslatableText(DataInputStream dataInputStream) throws IOException {
-        encodedValue = DataStreamUtil.readStringWithLengthHeader(dataInputStream);
+        this(DataStreamUtil.readStringWithLengthHeader(dataInputStream));
     }
 
     public TranslatableText(String originalText, String originalLanguage, Map<String, String> translationMap) {
+        if (originalLanguage==null || originalLanguage.length()!=2) {
+            throw new RuntimeException("Error: invalid original language");
+        }
         if (translationMap.keySet().stream().anyMatch(s -> s.length() != 2)) {
             throw new RuntimeException("Error: invalid translation map");
         }
@@ -80,10 +106,18 @@ public class TranslatableText {
         this.translationMap = translationMap;
     }
 
-    public String getText() {
-        if (originalText == null) {
-            parseOriginalValue();
+    public void normalize() {
+        if (translationMap==null) {
+            initMembersFromEncodedText();
         }
+        encodedValue = createTranslationValue(originalText, originalLanguage, translationMap);
+    }
+
+    public boolean isEmpty() {
+        return isNull(this) || StringUtils.isEmpty(originalText);
+    }
+
+    public String getText() {
         return originalText;
     }
 
@@ -93,9 +127,6 @@ public class TranslatableText {
     }
 
     public String getOriginalLanguage() {
-        if (originalLanguage == null) {
-            parseOriginalValue();
-        }
         return originalLanguage;
     }
 
@@ -104,13 +135,19 @@ public class TranslatableText {
         return translation != null ? translation : getText();
     }
 
+    public String getText(String language, String defaultValue) {
+        String translation = getTranslation(language);
+        return translation != null ? translation : defaultValue;
+    }
+
     public String getText(List<String> rankedLanguages) {
         String translation = getTranslation(rankedLanguages);
         return translation != null ? translation : getText();
     }
 
+    // method with side effects
     public boolean isTranslation(Set<String> languages) {
-        if (languages.contains(getOriginalLanguage())) {
+        if (languages.contains(originalLanguage)) {
             return false;
         }
         Map<String, String> map = getTranslationMap();
@@ -123,10 +160,10 @@ public class TranslatableText {
     }
 
     public String getTranslation(String language) {
+        if (StringUtils.equals(language, originalLanguage)) {
+            return originalText;
+        }
         if (translationMap != null) {
-            if (language.equals(originalLanguage)) {
-                return originalText;
-            }
             return translationMap.get(language);
         } else {
             return translationLookup(language);
@@ -143,14 +180,26 @@ public class TranslatableText {
         return null;
     }
 
+    public Map.Entry<String, String> getTranslationEntry(List<String> rankedLanguages) {
+        for (String language : rankedLanguages) {
+            String translation = getTranslation(language);
+            if (translation != null) {
+                return new AbstractMap.SimpleEntry<>(language, translation);
+            }
+        }
+        return null;
+    }
+
     public TranslatableText setTranslation(String translation, String language) {
         if (translation == null || translation.isEmpty() || language == null || language.length() != 2) {
             return this;
         }
-        getTranslationMap().put(language, translation);
-        if (language.equals(originalLanguage)) {
+        if (StringUtils.equals(language, originalLanguage)) {
             originalText = translation;
+        } else {
+            getTranslationMap().put(language, translation);
         }
+        encodedValue = null;
         return this;
     }
 
@@ -158,34 +207,48 @@ public class TranslatableText {
         return findTranslation(language);
     }
 
+    // method with side effects
     public String getEncodedValue() {
-        if (translationMap != null || originalText != null) {
-            return createTranslationValue(originalText, originalLanguage, translationMap);
-        } else {
+        if (encodedValue != null) {
             return encodedValue;
+        } else if (originalText!=null || translationMap!=null) {
+            encodedValue = createTranslationValue(originalText, originalLanguage, translationMap);
+            return encodedValue;
+        } else {
+            return null;
         }
     }
 
-    private void parseOriginalValue() {
+    // return originalLanguage
+    // method with side effects
+    private String parseOriginalValue() {
         if (encodedValue == null) {
-            return;
+            return null;
         }
-        int pos = -1;
-        if((pos = encodedValue.indexOf(DELIMITER, pos + 1)) >= 0 && pos < encodedValue.length() - DELIMITER.length()) {
+        int pos = encodedValue.indexOf(DELIMITER);
+        if (pos >= 0 && pos < encodedValue.length() - DELIMITER.length()) {
             int end = encodedValue.indexOf(DELIMITER, pos + 1);
             if (end > pos) {
-                originalLanguage = encodedValue.substring(pos + DELIMITER.length(), pos + DELIMITER.length() + 2);
                 originalText = encodedValue.substring(pos +  DELIMITER.length() + 3, end);
+                return encodedValue.substring(pos + DELIMITER.length(), pos + DELIMITER.length() + 2);
             }
         }
+        return null;
     }
 
     private String findTranslation( String language) {
-        if (encodedValue == null || language == null || language.length() != 2) {
+        if (language == null || language.length() != 2) {
             return null;
         }
         if (language.equalsIgnoreCase(originalLanguage)) {
             return originalText;
+        }
+        if (translationMap != null) {
+            // note: if translationMap is set, then it is complete!
+            return translationMap.getOrDefault(language, null);
+        }
+        if (encodedValue==null) {
+            return null;
         }
         int pos = -1;
         char a = language.charAt(0);
@@ -201,33 +264,75 @@ public class TranslatableText {
         return null;
     }
 
+    // method with side effects
     public void writeValues(DataOutputStream dataOutputStream) throws IOException {
         String encodedValue = getEncodedValue();
         DataStreamUtil.writeStringWithLengthHeader(dataOutputStream, encodedValue);
     }
 
-    public Map<String, String> getTranslationMap() {
+    // method with side effects
+    protected Map<String, String> getTranslationMap() {
         if (translationMap != null) {
             return translationMap;
         } else {
-            translationMap = encodedValue != null ? parseEncodedTranslation(encodedValue) : new HashMap<>();
+            initMembersFromEncodedText();
             return translationMap;
         }
     }
 
-    private Map<String, String> parseEncodedTranslation(String text) {
-        Map<String, String> map = new HashMap<>();
+    public boolean contains(String language) {
+        if (translationMap==null && encodedValue!=null) {
+            // @todo: or should we call initMembersFromEncodedText() here?
+            return translationLookup(language)!=null;
+        }
+        if (StringUtils.equals(language, originalLanguage))
+            return true;
+        return translationMap.containsKey(language);
+    }
+
+    public boolean hasTranslations() {
+        return !getTranslationMap().isEmpty();
+    }
+
+    public int translationsCount() {
+        return getTranslationMap().size();
+    }
+
+    // method with side effects
+    public List<String> getLanguages() {
+        List<String> languages = new ArrayList<>(1 + (translationMap==null ? 0 : translationMap.size()));
+        if (translationMap==null && encodedValue!=null) {
+            initMembersFromEncodedText();
+        }
+        if (originalLanguage != null) {
+            languages.add(originalLanguage);
+        }
+        if (translationMap!=null) {
+            // @todo: here it is possible, that the original language is duplicated
+            languages.addAll(translationMap.keySet());
+        }
+        return languages;
+    }
+
+    private void initMembersFromEncodedText() {
+        translationMap = new HashMap<>();
         int pos = -1;
-        while((pos = text.indexOf(DELIMITER, pos + 1)) >= 0 && pos < text.length() - DELIMITER.length()) {
-            int end = text.indexOf(DELIMITER, pos + 1);
+        boolean first = true;
+        while((pos = encodedValue.indexOf(DELIMITER, pos + 1)) >= 0 && pos < encodedValue.length() - DELIMITER.length()) {
+            int end = encodedValue.indexOf(DELIMITER, pos + 1);
             if (end > pos) {
-                String language = text.substring(pos + DELIMITER.length(), pos + DELIMITER.length() + 2);
-                String value = text.substring(pos +  DELIMITER.length() + 3, end);
-                map.put(language, value);
-                pos = end - 1;
+                String language = encodedValue.substring(pos + DELIMITER.length(), pos + DELIMITER.length() + 2);
+                String value = encodedValue.substring(pos +  DELIMITER.length() + 3, end);
+                if (first) {
+                    // note: originalLanguage is already set (final member)
+                    originalText = value;
+                    first = false;
+                } else {
+                    translationMap.put(language, value);
+                    pos = end - 1;
+                }
             }
         }
-        return map;
     }
 
     private static String createTranslationValue(String originalText, String originalLanguage, Map<String, String> translationsByLanguage) {
@@ -237,11 +342,44 @@ public class TranslatableText {
         }
         if (translationsByLanguage != null) {
             for (Map.Entry<String, String> entry : translationsByLanguage.entrySet()) {
-                sb.append(DELIMITER).append(entry.getKey()).append(":").append(entry.getValue());
+                if (!entry.getKey().equals(originalLanguage)) {
+                    sb.append(DELIMITER).append(entry.getKey()).append(":").append(entry.getValue());
+                }
             }
         }
         sb.append(DELIMITER);
         return sb.toString();
     }
 
+    // method with side effects
+    @Override
+    public boolean equals(Object o) {
+        if (!equalsOriginal(o)) return false;
+        TranslatableText that = (TranslatableText) o;
+        if (encodedValue == null || encodedValue.equals(DELIMITER)) {
+            return that.encodedValue == null || that.encodedValue.equals(DELIMITER);
+        }
+        return Objects.equals(getEncodedValue(), that.getEncodedValue());
+    }
+
+    // method with side effects
+    @Override
+    public int hashCode() {
+        return Objects.hash(getEncodedValue());
+    }
+
+    public boolean equalsOriginal(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        TranslatableText that = (TranslatableText) o;
+        return Objects.equals(originalText, that.originalText) && Objects.equals(originalLanguage, that.originalLanguage);
+    }
+
+//    @Override
+//    public int hashCode() {
+//        if (originalLanguage==null && encodedValue!=null) {
+//            computeMemberFromEncodedText();
+//        }
+//        return Objects.hash(originalText, originalLanguage);
+//    }
+//
 }
