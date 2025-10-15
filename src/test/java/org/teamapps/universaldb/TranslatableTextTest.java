@@ -32,6 +32,7 @@ import java.util.List;
 
 import org.teamapps.datamodel.testdb1.FieldTest;
 import org.teamapps.universaldb.context.UserContext;
+import org.teamapps.universaldb.index.text.TextFilter;
 import org.teamapps.universaldb.index.translation.TranslatableText;
 import org.teamapps.universaldb.index.translation.TranslatableTextFilter;
 
@@ -42,6 +43,7 @@ public class TranslatableTextTest {
     @BeforeClass
     public static void init() throws Exception {
         TestBase.init();
+	    fillDatabase();
     }
 
     @Test
@@ -60,58 +62,119 @@ public class TranslatableTextTest {
                 .translatableText(TranslatableTextFilter.termContainsFilter("fr", context))
                 .executeExpectSingleton();
 
-        assertEquals("ID1", fieldTest.getTextField());
+        assertEquals("Test.ID1", fieldTest.getTextField());
     }
 
 	@Test
 	public void testMultiText() {
-		fillDatabase();
 		UserContext context = UserContext.create("fr", "de");
 		List<FieldTest> fieldTest1 = FieldTest.filter()
 				.translatableText(TranslatableTextFilter.termContainsFilter("clairieres", context))
 				.execute();
-		assertEquals(3, fieldTest1.size());
-		assertEquals("ID2", fieldTest1.getFirst().getTextField());
+		assertEquals(4, fieldTest1.size());
+		assertEquals("Test.ID3", fieldTest1.getFirst().getTextField());
 
-		assertEquals("ID6", FieldTest.filter()
+		assertEquals("Test.ID7", FieldTest.filter()
 				.translatableText(TranslatableTextFilter.termContainsFilter("schlief", context))
 				.executeExpectSingleton().getTextField());
 	}
 
 	@Test
 	public void testMoreLanguages() {
-		fillDatabase();
 		UserContext context = UserContext.create("de", "nl", "en", "fr", "el", "zh", "ja", "he");
 		List<FieldTest> fieldTest = FieldTest.filter()
 				.translatableText(TranslatableTextFilter.termContainsFilter("Aankoopen", context))
 				.execute();
-		assertEquals(3, fieldTest.size());
-		assertEquals("ID4", fieldTest.get(0).getTextField());
-		assertEquals("ID6", fieldTest.get(1).getTextField());
-		assertEquals("ID7", fieldTest.get(2).getTextField());
+		assertEquals(4, fieldTest.size());
+		assertEquals("Test.ID5", fieldTest.get(0).getTextField());
+		assertEquals("Test.ID7", fieldTest.get(1).getTextField());
+		assertEquals("Test.ID8", fieldTest.get(2).getTextField());
 
 		fieldTest = FieldTest.filter()
 				.translatableText(TranslatableTextFilter.termContainsFilter("כנף. משים והכו", context))
 				.execute();
-		assertEquals(1, fieldTest.size());
-		assertEquals("ID5", fieldTest.getFirst().getTextField());
+		assertEquals(2, fieldTest.size());
+		assertEquals("Test.ID6", fieldTest.getFirst().getTextField());
 
 		fieldTest = FieldTest.filter()
 				.translatableText(TranslatableTextFilter.termContainsFilter("後竊聽", context))
 				.execute();
-		assertEquals(8, fieldTest.size());
-		assertEquals("ID0", fieldTest.getFirst().getTextField());
+		assertEquals(9, fieldTest.size());
+		assertEquals("Test.ID1", fieldTest.getFirst().getTextField());
 
 		fieldTest = FieldTest.filter()
 				.translatableText(TranslatableTextFilter.termContainsFilter("第八章 第三章", context))
 				.execute();
-		assertEquals(10, fieldTest.size());
-		assertEquals("ID0", fieldTest.getFirst().getTextField());
+		assertEquals(11, fieldTest.size());
+		assertEquals("Test.ID1", fieldTest.getFirst().getTextField());
 
-		assertEquals(3, fieldTest.stream().filter(s -> s.getTranslatableText().getText("ja").contains("第八章 第三章")).count());
+		assertEquals(4, fieldTest.stream().filter(s -> s.getTranslatableText().getText("ja").contains("第八章 第三章")).count());
 	}
 
-	public void fillDatabase() {
+	@Test
+	public void searchBenchMark() {
+		String[] german = readLanguage("german");
+		String[] greek = readLanguage("greek");
+
+		UserContext context = UserContext.create("de", "nl", "en", "fr", "zh", "ja", "he", "el");
+		String[] matchStrings = {"clairieres", "schlief", "Aankoopen", "הַבַּרְזֶל", "後竊聽", "第八章 第三章", "αποδεκτών", "RECOMMEND"};
+		String[] noMatchStrings = {"clairieresx", "schliefx", "Aankoopenx", "xהַבַּרְזֶל", "後竊聽x", "第八章 第三章x", "αποδεκτώνx", "RECOMMENDx"};
+		for (int i=0; i<3; ++i) {
+			long start = System.nanoTime();
+			for (String search : matchStrings) {
+				assertNotNull(FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter(search, context)).executeExpectSingleton());
+			}
+			long finish0 = System.nanoTime();
+			for (String search : matchStrings) {
+				assertTrue(FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter(search, context)).execute().size() > 1);
+			}
+			long finish1 = System.nanoTime();
+			for (String search : noMatchStrings) {
+				assertTrue(FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter(search, context)).execute().isEmpty());
+			}
+			long finish2 = System.nanoTime();
+			for (int germanInx=0; germanInx<10; ++germanInx) {
+				String search = german[germanInx];
+				assertFalse(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter(search, context))
+						.execute().isEmpty());
+			}
+			long finish3 = System.nanoTime();
+			for (int greekInx=0; greekInx<10; ++greekInx) {
+				String search = greek[greekInx];
+				assertFalse(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter(search, context)).execute().isEmpty());
+			}
+			long finish4 = System.nanoTime();
+
+			System.out.println("searchSingle=" + (finish0 - start) / 1000_000.0d + "ms, searchAll=" + (finish1 - finish0) / 1000_000.0d + "ms, searchNoMatch=" + (finish2 - finish1) / 1000_000.0d + "ms, equalsDE=" + (finish3 - finish2) / 1000_000.0d + "ms, equalsEL=" + (finish4 - finish3) / 1000_000.0d);
+		}
+	}
+
+	@Test
+	public void getTextBenchmark() {
+		// sequence of language in encodedText: en, de, ja, el, fr, he, nl, zh
+		TranslatableText text = FieldTest.filter().textField(TextFilter.textEqualsFilter("Test.ID11")).executeExpectSingleton().getTranslatableText();
+		String[] languages = {"de", "nl", "en", "fr", "zh", "ja", "he", "el"};
+		for (String language : languages) {
+			long start = System.nanoTime();
+			for (int i = 0; i < 1000; ++i) {
+				assertTrue(text.contains(language));
+				String value = text.getText(language);
+				assertNotNull(value);
+			}
+			long finish = System.nanoTime();
+			System.out.println("getText(\""+language+"\")=" + (finish - start) / 1000_000.0d + "ms");
+		}
+		long start = System.nanoTime();
+		for (int i = 0; i < 1000; ++i) {
+			assertTrue(text.contains("en"));
+			String value = text.getText("en");
+			assertNotNull(value);
+		}
+		long finish = System.nanoTime();
+		System.out.println("getText(\"en\")=" + (finish - start) / 1000_000.0d + "ms");
+	}
+
+	public static void fillDatabase() {
 		String[] german = readLanguage("german");
 		String[] english = readLanguage("english");
 		String[] french = readLanguage("french");
@@ -121,7 +184,7 @@ public class TranslatableTextTest {
 		String[] hebrew = readLanguage("hebrew");
 		String[] greek = readLanguage("greek");
 
-		for (int i=0; i<10; ++i) {
+		for (int i=0; i<11; ++i) {
 			TranslatableText translatableText = TranslatableText.create(english[i], "en")
 					.setTranslation(german[i], "de")
 					.setTranslation(french[i], "fr")
@@ -132,22 +195,24 @@ public class TranslatableTextTest {
 					.setTranslation(greek[i], "el")
 					;
 			FieldTest.create()
-					.setTextField("ID" + i)
+					.setTextField("Test.ID" + (i+1))
 					.setTranslatableText(translatableText)
 					.save();
 		}
 	}
 
 	public static String[] readLanguage(String language) {
-		String[] result = new String[10];
-		System.out.println("read " +  language + " ...");
+		String[] result = new String[11];
+		StringBuilder allLines = new StringBuilder();
 		try (InputStream is = TranslatableTextTest.class.getResourceAsStream(language + ".txt")) {
 			Assert.assertNotNull(is);
 			try (BufferedReader rd = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
 				int i = 0;
-				while (i < result.length && (result[i++] = rd.readLine()) != null) {
+				while (i < result.length && (result[i] = rd.readLine()) != null) {
+					allLines.append(result[i++]);
 				}
 			}
+			result[10] = allLines.toString();
 		} catch (IOException e) {
 			e.printStackTrace();
 		}

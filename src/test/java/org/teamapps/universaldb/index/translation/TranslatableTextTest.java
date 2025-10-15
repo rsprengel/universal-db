@@ -93,7 +93,7 @@ public class TranslatableTextTest {
         assertFalse(text2.equalsOriginal(text));
         assertEquals("new original", text2.getText());
         assertEquals("\n<=@#!=>\nen:new original\n<=@#!=>\n", text2.getEncodedValue());
-        assertNull(text2.translationMap);
+        assertNotNull(text2.translationMap);
 
         TranslatableText nullText = new TranslatableText("\n<=@#!=>\n");
         assertTrue(TranslatableText.isNull(nullText));
@@ -202,6 +202,44 @@ public class TranslatableTextTest {
     }
 
     @Test
+    public void testIso3Language() {
+		// ISO3: deu=deutsch, eng=englisch, fra=französisch, zho=chinese, cmn=mandarin,
+        // Translatable text without translation
+        TranslatableText text = TranslatableText.create("original", "eng");
+
+		assertEquals("eng", text.getOriginalLanguage());
+		assertEquals("eng", text.getLanguages().getFirst());
+        assertEquals("original", text.getText());
+        assertEquals("original", text.getText("eng"));
+        assertEquals("original", text.getTranslation("eng"));
+        assertEquals("eng", text.getOriginalLanguage());
+
+        assertFalse(text.isEmpty());
+        assertFalse(TranslatableText.isNull(text));
+	    assertNull(text.getTranslation("deu"));
+        assertEquals("original", text.getTranslation(List.of("deu", "eng")));
+	    assertEquals("original", text.getText("deu"));
+
+		text.setTranslation("deutsch", "deu");
+	    assertEquals("eng", text.getLanguages().getFirst());
+	    assertEquals("deu", text.getLanguages().get(1));
+	    assertEquals("original", text.getText());
+	    assertEquals("deutsch", text.getText("deu"));
+
+		TranslatableText text2 = new TranslatableText(text.getEncodedValue());
+	    assertEquals("eng", text2.getOriginalLanguage());
+	    assertEquals("eng", text2.getLanguages().getFirst());
+	    assertEquals("original", text2.getText());
+	    assertEquals("deutsch", text2.getText("deu"));
+
+	    String encoded = "\n<=@#!=>\neng:original\n<=@#!=>\ndeu:Original\n<=@#!=>\nfra:originale\n<=@#!=>\nrus:оригинал\n<=@#!=>\n";
+	    text = new TranslatableText(encoded);
+		assertEquals("original", text.getText("eng"));
+		assertEquals("Original", text.getText("deu"));
+	    assertEquals("none", text.getText("en", "none"));
+    }
+
+    @Test
     public void testIsTranslatableText() {
         assertTrue(TranslatableText.isTranslatableText(null));
         assertFalse(TranslatableText.isTranslatableText(""));
@@ -226,11 +264,25 @@ public class TranslatableTextTest {
         assertEquals(encoded, text.getEncodedValue());
     }
 
+	@Test
+	public void testOverwriteOriginalTranslation() {
+		String encodedValueWithTranslation = "\n<=@#!=>\nen:text-en\n<=@#!=>\nde:text-de\n<=@#!=>\n";
+		TranslatableText text = new TranslatableText(encodedValueWithTranslation);
+		assertEquals("en", text.getOriginalLanguage());
+		assertEquals("text-en", text.getText());
+		assertEquals("text-de", text.getText("de"));
+		text.setTranslation("new-en", "en");
+		assertEquals("new-en", text.getText());
+		assertEquals("text-de", text.getText("de"));
+		assertEquals("\n<=@#!=>\nen:new-en\n<=@#!=>\nde:text-de\n<=@#!=>\n", text.getEncodedValue());
+	}
+
     @Test
     public void createWithEncodedValue() {
         String encodedValueNull = null;
         TranslatableText text = new TranslatableText(encodedValueNull);
         assertNotNull(text);
+		assertTrue(TranslatableText.isNull(text));
         assertNull(text.getEncodedValue());
         assertNull(text.getText());
         assertNull(text.getTranslation("en"));
@@ -240,7 +292,7 @@ public class TranslatableTextTest {
         assertNull(text.getText());
         assertNull(text.getTranslation("en"));
 
-        String encodedValueWithTranslation = "\n<=@#!=>\nen=text-en\n<=@#!=>\nde=text-de\n<=@#!=>\n";
+        String encodedValueWithTranslation = "\n<=@#!=>\nen:text-en\n<=@#!=>\nde:text-de\n<=@#!=>\n";
         text = new TranslatableText(encodedValueWithTranslation);
         assertFalse(text.isTranslation(Set.of("en")));
         assertTrue(text.isTranslation(Set.of("de")));
@@ -256,7 +308,7 @@ public class TranslatableTextTest {
         assertEquals(encodedValueWithTranslation, text.getEncodedValue());
 
         // inconsistent encodedValue (with original language duplicated as translation with different value
-        String encodedValueWithDuplicateLanguage = "\n<=@#!=>\nen=text-en\n<=@#!=>\nen=text-en\n<=@#!=>\nde=text-de\n<=@#!=>\n";
+        String encodedValueWithDuplicateLanguage = "\n<=@#!=>\nen:text-en\n<=@#!=>\nen:text-en\n<=@#!=>\nde:text-de\n<=@#!=>\n";
         text = new TranslatableText(encodedValueWithDuplicateLanguage);
         assertFalse(text.isTranslation(Set.of("en")));
         assertEquals(encodedValueWithDuplicateLanguage, text.getEncodedValue());
@@ -273,7 +325,7 @@ public class TranslatableTextTest {
         //assertEquals(text, TranslatableText.create("text-en", "en").setTranslation("text-de", "de"));
 
         // inconsistent encodedValue (with original language duplicated as translation with different value
-        String inconsistentEncodedValue = "\n<=@#!=>\nen=text-en\n<=@#!=>\nen=text-en2\n<=@#!=>\n";
+        String inconsistentEncodedValue = "\n<=@#!=>\nen:text-en\n<=@#!=>\nen:text-en2\n<=@#!=>\n";
         text = new TranslatableText(inconsistentEncodedValue);
         assertEquals(inconsistentEncodedValue, text.getEncodedValue());
         assertEquals("text-en", text.getTranslation("en"));
