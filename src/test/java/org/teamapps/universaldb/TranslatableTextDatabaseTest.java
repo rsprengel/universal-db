@@ -38,7 +38,7 @@ import org.teamapps.universaldb.index.translation.TranslatableTextFilter;
 
 import static org.junit.Assert.*;
 
-public class TranslatableTextTest {
+public class TranslatableTextDatabaseTest {
 
     @BeforeClass
     public static void init() throws Exception {
@@ -204,7 +204,7 @@ public class TranslatableTextTest {
 	public static String[] readLanguage(String language) {
 		String[] result = new String[11];
 		StringBuilder allLines = new StringBuilder();
-		try (InputStream is = TranslatableTextTest.class.getResourceAsStream(language + ".txt")) {
+		try (InputStream is = TranslatableTextDatabaseTest.class.getResourceAsStream(language + ".txt")) {
 			Assert.assertNotNull(is);
 			try (BufferedReader rd = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
 				int i = 0;
