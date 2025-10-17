@@ -112,6 +112,62 @@ public class TranslatableTextDatabaseTest {
 	}
 
 	@Test
+	public void searchTranslatableTextTest() {
+		UserContext context = UserContext.create("de", "en");
+
+		// textEqualsFilter ...
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter("Bundesrepublik Deutschland", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter("federal republic of germany", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter("República Federal de Alemania", UserContext.create("de", "en", "es"))).executeExpectSingleton().getTextField());
+		assertNull(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter("germany", context)).executeExpectSingleton());
+		assertNull(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter("republic of germany", context)).executeExpectSingleton());
+		assertNull(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter("República Federal de Alemania", context)).executeExpectSingleton());
+		assertNull(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter("Deutschland", context)).executeExpectSingleton());
+		assertNull(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter("Deutschland Bundesrepublik", context)).executeExpectSingleton());
+		assertNull(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter("bundesrepublik deutschland", context)).executeExpectSingleton());
+
+		// termContainsFilter ...
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter("Deutschland", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter("Deutschland", context))
+				.translatableText(TranslatableTextFilter.termContainsFilter("Bundesrepublik", context))
+				.executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter("Deutschland", context))
+				.translatableText(TranslatableTextFilter.termContainsFilter("germany", context))
+				.executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter("Republik", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter("Alemania", UserContext.create("de", "en", "es"))).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter("germany", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter("federal germany", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter("germany federal", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().fullTextFilter(TranslatableTextFilter.termContainsFilter("Bundesrepublik", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().fullTextFilter(TranslatableTextFilter.termContainsFilter("Deutsch Bund", context)).executeExpectSingleton().getTextField());
+		assertNull(FieldTest.filter().fullTextFilter(TranslatableTextFilter.termContainsFilter("Alemania", context)).executeExpectSingleton());
+
+		assertNull(FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter("Deutschland germany", context)).executeExpectSingleton());
+		assertNull(FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter("Alemania", context)).executeExpectSingleton());
+
+		// termStartsWithFilter ...
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termStartsWithFilter("Deutsch", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termStartsWithFilter("bund", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termStartsWithFilter("bund deutsch", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termStartsWithFilter("Deutschland Bundesrepublik", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termStartsWithFilter("german", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termStartsWithFilter("republic", context)).executeExpectSingleton().getTextField());
+		assertNull(FieldTest.filter().translatableText(TranslatableTextFilter.termStartsWithFilter("Republik", context)).executeExpectSingleton());
+
+		// termEqualsFilter ...
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termEqualsFilter("Bundesrepublik", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termEqualsFilter("Deutschland", context)).executeExpectSingleton().getTextField());
+		assertNull(FieldTest.filter().translatableText(TranslatableTextFilter.termEqualsFilter("Republik", context)).executeExpectSingleton());
+
+		// termSimilarFilter
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termSimilarFilter("republica federal de alemania", UserContext.create("de", "en", "es"))).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termSimilarFilter("fedderal republick off germanie", context)).executeExpectSingleton().getTextField());
+		assertEquals("Country.germany", FieldTest.filter().translatableText(TranslatableTextFilter.termSimilarFilter("republic of germany", context)).executeExpectSingleton().getTextField());
+		assertNull(FieldTest.filter().translatableText(TranslatableTextFilter.termSimilarFilter("rep germany", context)).executeExpectSingleton());
+	}
+
+	@Test
 	public void searchBenchMark() {
 		String[] german = readLanguage("german");
 		String[] greek = readLanguage("greek");
@@ -184,6 +240,13 @@ public class TranslatableTextDatabaseTest {
 		String[] hebrew = readLanguage("hebrew");
 		String[] greek = readLanguage("greek");
 
+		TranslatableText germanyName = TranslatableText.create("Bundesrepublik Deutschland", "de")
+				.setTranslation("federal republic of germany", "en")
+				.setTranslation("República Federal de Alemania", "es");
+		FieldTest germany = FieldTest.create()
+				.setTextField("Country.germany").setTranslatableText(germanyName).save();
+
+		FieldTest newField = null;
 		for (int i=0; i<11; ++i) {
 			TranslatableText translatableText = TranslatableText.create(english[i], "en")
 					.setTranslation(german[i], "de")
@@ -194,11 +257,13 @@ public class TranslatableTextDatabaseTest {
 					.setTranslation(hebrew[i], "he")
 					.setTranslation(greek[i], "el")
 					;
-			FieldTest.create()
+			newField = FieldTest.create()
 					.setTextField("Test.ID" + (i+1))
 					.setTranslatableText(translatableText)
+					.setSingleReferenceField(germany)
 					.save();
 		}
+		newField.setSingleReferenceField(germany).save();
 	}
 
 	public static String[] readLanguage(String language) {
