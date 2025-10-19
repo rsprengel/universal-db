@@ -17,8 +17,9 @@
  * limitations under the License.
  * =========================LICENSE_END==================================
  */
-package org.teamapps.universaldb;
+package org.teamapps.universaldb.index.translation;
 
+import org.apache.commons.lang3.StringUtils;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -28,13 +29,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 import org.teamapps.datamodel.testdb1.FieldTest;
+import org.teamapps.universaldb.TestBase;
 import org.teamapps.universaldb.context.UserContext;
 import org.teamapps.universaldb.index.text.TextFilter;
-import org.teamapps.universaldb.index.translation.TranslatableText;
-import org.teamapps.universaldb.index.translation.TranslatableTextFilter;
 
 import static org.junit.Assert.*;
 
@@ -43,6 +45,7 @@ public class TranslatableTextDatabaseTest {
     @BeforeClass
     public static void init() throws Exception {
         TestBase.init();
+		TranslatableText.setStandardWriteVersion(1);
 	    fillDatabase();
     }
 
@@ -169,6 +172,7 @@ public class TranslatableTextDatabaseTest {
 
 	@Test
 	public void searchBenchMark() {
+		String[] english = readLanguage("english");
 		String[] german = readLanguage("german");
 		String[] greek = readLanguage("greek");
 
@@ -176,32 +180,48 @@ public class TranslatableTextDatabaseTest {
 		String[] matchStrings = {"clairieres", "schlief", "Aankoopen", "הַבַּרְזֶל", "後竊聽", "第八章 第三章", "αποδεκτών", "RECOMMEND"};
 		String[] noMatchStrings = {"clairieresx", "schliefx", "Aankoopenx", "xהַבַּרְזֶל", "後竊聽x", "第八章 第三章x", "αποδεκτώνx", "RECOMMENDx"};
 		for (int i=0; i<3; ++i) {
-			long start = System.nanoTime();
+			long singletonTime = System.nanoTime();
 			for (String search : matchStrings) {
 				assertNotNull(FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter(search, context)).executeExpectSingleton());
 			}
-			long finish0 = System.nanoTime();
+			singletonTime = System.nanoTime() - singletonTime;
+
+			long allTime = System.nanoTime();
 			for (String search : matchStrings) {
 				assertTrue(FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter(search, context)).execute().size() > 1);
 			}
-			long finish1 = System.nanoTime();
+			allTime = System.nanoTime() - allTime;
+
+			long noMatchTime = System.nanoTime();
 			for (String search : noMatchStrings) {
 				assertTrue(FieldTest.filter().translatableText(TranslatableTextFilter.termContainsFilter(search, context)).execute().isEmpty());
 			}
-			long finish2 = System.nanoTime();
+			noMatchTime = System.nanoTime() - noMatchTime;
+
+			long germanTime = System.nanoTime();
 			for (int germanInx=0; germanInx<10; ++germanInx) {
 				String search = german[germanInx];
 				assertFalse(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter(search, context))
 						.execute().isEmpty());
 			}
-			long finish3 = System.nanoTime();
+			germanTime = System.nanoTime() - germanTime;
+
+			long greekTime = System.nanoTime();
 			for (int greekInx=0; greekInx<10; ++greekInx) {
 				String search = greek[greekInx];
 				assertFalse(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter(search, context)).execute().isEmpty());
 			}
-			long finish4 = System.nanoTime();
+			greekTime = System.nanoTime() - greekTime;
 
-			System.out.println("searchSingle=" + (finish0 - start) / 1000_000.0d + "ms, searchAll=" + (finish1 - finish0) / 1000_000.0d + "ms, searchNoMatch=" + (finish2 - finish1) / 1000_000.0d + "ms, equalsDE=" + (finish3 - finish2) / 1000_000.0d + "ms, equalsEL=" + (finish4 - finish3) / 1000_000.0d);
+			long englishTime = System.nanoTime();
+			for (int englishInx=0; englishInx<10; ++englishInx) {
+				String search = english[englishInx];
+				assertFalse(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter(search, context))
+						.execute().isEmpty());
+			}
+			englishTime = System.nanoTime() - englishTime;
+
+			System.out.println("searchSingle=" + (singletonTime / 1000_000.0d) + "ms, searchAll=" + (allTime / 1000_000.0d) + "ms, searchNoMatch=" + (noMatchTime / 1000_000.0d) + "ms, equalsDE=" + (germanTime / 1000_000.0d) + "ms, equalsEL=" + (greekTime / 1000_000.0d) + "ms, equalsEN=" + (englishTime / 1000_000d));
 		}
 	}
 
@@ -230,6 +250,59 @@ public class TranslatableTextDatabaseTest {
 		System.out.println("getText(\"en\")=" + (finish - start) / 1000_000.0d + "ms");
 	}
 
+	public void measureEncodeDecode(String prefix, Function<TranslatableText, String> encode) throws IOException {
+		int loops = 10;
+		int size = 100_000;
+		long fullTimeEncode = 0;
+		long fullTimeDecode = 0;
+		long minEncode = 1_000_000_000;
+		long maxEncode = 0;
+		long minDecode = 1_000_000_000;
+		long maxDecode = 0;
+		String[] languages = {"de", "nl", "en", "fr", "zh", "ja", "he", "el"};
+		TranslatableText text = FieldTest.filter().textField(TextFilter.textEqualsFilter("Test.ID11")).executeExpectSingleton().getTranslatableText();
+		System.out.println(prefix + " text encoding:...");
+		for (int n = 0; n < loops; n++) {
+			long startTime = System.nanoTime();
+			List<String> encodedList = new ArrayList<>(size);
+			for (int i = 0; i < size; i++) {
+				String encoded = encode.apply(text);
+				encodedList.add(encoded);
+			}
+			long encodeDuration = (System.nanoTime() - startTime)/1000;
+			startTime = System.nanoTime();
+			for (int i = 0; i < size; i++) {
+				String value = encodedList.get(i);
+				TranslatableText translatableText = new TranslatableText(value);
+				for (String language :  languages) {
+					if (StringUtils.isBlank(translatableText.getText(language))) {
+						System.out.println("Error:" + language + " is empty");
+					}
+				}
+			}
+			long decodeDuration = (System.nanoTime() - startTime)/1000;
+			if (n == 0) {
+				System.out.println("  First " + prefix + " encode: " + encodeDuration / 1_000.0d + "  First " + prefix + " decode: " + decodeDuration / 1_000.0d);
+			} else {
+				fullTimeEncode += encodeDuration;
+				fullTimeDecode += decodeDuration;
+				if (encodeDuration < minEncode) minEncode = encodeDuration;
+				if (encodeDuration > maxEncode) maxEncode = encodeDuration;
+				if (decodeDuration < minDecode) minDecode = decodeDuration;
+				if (decodeDuration > maxDecode) maxDecode = decodeDuration;
+			}
+		}
+		System.out.println("  Time  " + prefix + " encode: " + fullTimeEncode / (loops - 1)  / 1_000.0d + " min=" + minEncode / 1_000.0d + " max=" + maxEncode / 1_000.0d);
+		System.out.println("  Time  " + prefix + " decode: " + fullTimeDecode / (loops - 1)  / 1_000.0d + " min=" + minDecode / 1_000.0d + " max=" + maxDecode / 1_000.0d);
+	}
+
+	@Test
+	public void compareImplementations() throws IOException {
+		measureEncodeDecode("old", t -> t.createEncodedValue(0));
+		measureEncodeDecode("new", t -> t.createEncodedValue(1));
+		measureEncodeDecode("len", t -> t.createEncodedValue(2));
+	}
+
 	public static void fillDatabase() {
 		String[] german = readLanguage("german");
 		String[] english = readLanguage("english");
@@ -240,6 +313,7 @@ public class TranslatableTextDatabaseTest {
 		String[] hebrew = readLanguage("hebrew");
 		String[] greek = readLanguage("greek");
 
+		TranslatableText.setStandardWriteVersion(2);
 		TranslatableText germanyName = TranslatableText.create("Bundesrepublik Deutschland", "de")
 				.setTranslation("federal republic of germany", "en")
 				.setTranslation("República Federal de Alemania", "es");
