@@ -45,7 +45,7 @@ public class TranslatableTextDatabaseTest {
     @BeforeClass
     public static void init() throws Exception {
         TestBase.init();
-		TranslatableText.setStandardWriteVersion(1);
+		TranslatableText.setStandardWriteVersion(2);
 	    fillDatabase();
     }
 
@@ -313,7 +313,6 @@ public class TranslatableTextDatabaseTest {
 		String[] hebrew = readLanguage("hebrew");
 		String[] greek = readLanguage("greek");
 
-		TranslatableText.setStandardWriteVersion(2);
 		TranslatableText germanyName = TranslatableText.create("Bundesrepublik Deutschland", "de")
 				.setTranslation("federal republic of germany", "en")
 				.setTranslation("República Federal de Alemania", "es");

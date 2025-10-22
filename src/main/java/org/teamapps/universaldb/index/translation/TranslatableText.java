@@ -411,7 +411,7 @@ public class TranslatableText {
         if (translationMap==null) {
             return (encodedValue!=null && findTranslation(language) != null);
             // @todo: or should we call initMembersFromEncodedText() here?
-            //			initMembersFromEncodedText();
+//            			initMembersFromEncodedText();
         }
         return translationMap.containsKey(language);
     }
@@ -449,7 +449,7 @@ public class TranslatableText {
             return;
         }
         String delimiter = getDelimiter(encodedValue);
-        int pos = originalText.length()+3;
+        int pos = delimiter.length()+1+originalText.length();
         while((pos = encodedValue.indexOf(delimiter, pos + 1)) >= 0) {
             int end = encodedValue.indexOf(delimiter, pos + delimiter.length());
             if (end < 0) end = encodedValue.length();
@@ -536,15 +536,6 @@ public class TranslatableText {
         return result+1;
     }
 
-    public static int fromBase94(String encoded) {
-        int result = 0;
-        for (int i=0; i<encoded.length(); ++i) {
-            char c = encoded.charAt(i);
-            result = result * 94 + (c-32);
-        }
-        return result;
-    }
-
     private String readString(String encodedValue, MutableInt pos) {
         int len = 0;
         int begin=pos.intValue();
@@ -589,16 +580,16 @@ public class TranslatableText {
         // so we will not parse the original value here
         translationMap = new HashMap<>();
         char delimiter = '~';
-        int pos = 2;
-        while(pos >= 0 && pos < encodedIndexValue.length() - 1) {
-            String language = encodedIndexValue.charAt(pos + 2) == ':' ? encodedIndexValue.substring(pos, pos + 2) : encodedIndexValue.substring(pos, ++pos + 2);
-            int end = encodedIndexValue.indexOf(delimiter, pos + 3);
-            int len = fromBase94(encodedIndexValue.substring(pos + 3, end));
+        MutableInt pos = new MutableInt(DELIMITER.length()+1);
+        while(pos.intValue() >= 0 && pos.intValue() < encodedIndexValue.length() - 1) {
+            String language = encodedIndexValue.charAt(pos.intValue() + 2) == ':' ? encodedIndexValue.substring(pos.intValue(), pos.intValue() + 2) : encodedIndexValue.substring(pos.intValue(), pos.incrementAndGet() + 2);
+            pos.add(3);
             if (!Objects.equals(language, originalLanguage)) {
-                String value = encodedIndexValue.substring(end+1, end + len + 1);
+                String value = readString(encodedValue, pos);
                 translationMap.put(language, value);
+            } else {
+                skipString(encodedValue, pos);
             }
-            pos = end + len + 1;
         }
     }
 

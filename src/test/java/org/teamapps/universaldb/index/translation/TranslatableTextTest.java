@@ -432,6 +432,11 @@ public class TranslatableTextTest {
         text = new TranslatableText(encodedValueSingleLanguage);
         assertEquals("example 1", text.getText());
 
+        String encodedValueDuplicatedLanguage = TranslatableText.DELIMITER+"2en:)~example 1en:)~example 1fr:)~example f";
+        text = new TranslatableText(encodedValueDuplicatedLanguage);
+        assertEquals("example 1", text.getText());
+        assertTrue("fr", text.contains("fr"));
+
         String encodedValueWithTranslation = TranslatableText.DELIMITER+"1en:text-en"+TranslatableText.DELIMITER+"de:text-de";
         text = new TranslatableText(encodedValueWithTranslation);
         assertFalse(text.isTranslation(Set.of("en")));
