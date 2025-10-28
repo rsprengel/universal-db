@@ -31,13 +31,14 @@ import java.util.*;
 
 public class TranslatableText {
 
+    private final static int MAX_VERSION = 2;
     protected final static String OLD_DELIMITER = "\n<=@#!=>\n";
     protected final static String DELIMITER = "\n<=@#~=>\n";
 //    protected final static String DELIMITER = "\u200B";
     protected final static int VERSION_POSITION = DELIMITER.length();
 
     // this can be changed before first use
-    private static int STANDARD_VERSION = 1;
+    private static int STANDARD_VERSION = 2;
 
     private final String originalLanguage;
     private String originalText;
@@ -61,7 +62,7 @@ public class TranslatableText {
     }
 
     public static void setStandardWriteVersion(int version) {
-        if (version >= 0 && version < 3) {
+        if (version >= 0 && version <= MAX_VERSION) {
             STANDARD_VERSION = version;
         }
     }
@@ -107,21 +108,6 @@ public class TranslatableText {
 
     public TranslatableText(DataInputStream dataInputStream) throws IOException {
         this(DataStreamUtil.readStringWithLengthHeader(dataInputStream));
-    }
-
-    public TranslatableText(String originalText, String originalLanguage, Map<String, String> translationMap) {
-        if (originalLanguage==null || originalLanguage.length()!=2) {
-            throw new RuntimeException("Error: invalid original language");
-        }
-        if (translationMap.keySet().stream().anyMatch(s -> s.length() != 2)) {
-            throw new RuntimeException("Error: invalid translation map");
-        }
-        this.originalText = originalText;
-        this.originalLanguage = originalLanguage;
-        this.translationMap = translationMap;
-        if (translationMap.containsKey(originalLanguage)) {
-            this.translationMap.remove(originalLanguage);
-        }
     }
 
     public void normalize() {
@@ -207,6 +193,15 @@ public class TranslatableText {
     }
 
     public String getTranslation(List<String> rankedLanguages) {
+        if (rankedLanguages.isEmpty()) {
+            return "";
+        }
+        if (rankedLanguages.getFirst().equals(originalLanguage)) {
+            return originalText;
+        }
+        if (translationMap==null && encodedValue!=null) {
+            initMembersFromEncodedText();
+        }
         for (String language : rankedLanguages) {
             String translation = getTranslation(language);
             if (translation != null) {
@@ -217,6 +212,15 @@ public class TranslatableText {
     }
 
     public Map.Entry<String, String> getTranslationEntry(List<String> rankedLanguages) {
+        if (rankedLanguages.isEmpty()) {
+            return null;
+        }
+        if (rankedLanguages.getFirst().equals(originalLanguage)) {
+            return new AbstractMap.SimpleEntry<>(originalLanguage, originalText);
+        }
+        if (translationMap==null && encodedValue!=null) {
+            initMembersFromEncodedText();
+        }
         for (String language : rankedLanguages) {
             String translation = getTranslation(language);
             if (translation != null) {
@@ -256,10 +260,14 @@ public class TranslatableText {
     }
 
     private static int parseVersion(String encodedValue) {
-        if (encodedValue==null || encodedValue.length()<2)
+        if (encodedValue==null || encodedValue.length()<DELIMITER.length())
             return -1;
-        if (encodedValue.startsWith(DELIMITER))
-            return encodedValue.charAt(VERSION_POSITION)-'0';
+        if (encodedValue.startsWith(DELIMITER)) {
+            if (VERSION_POSITION >= encodedValue.length()) {
+                return -1;
+            }
+            return encodedValue.charAt(VERSION_POSITION) - '0';
+        }
         return 0;
     }
 
@@ -285,13 +293,12 @@ public class TranslatableText {
 
     private String parseOriginalValueWithLengthEncoding() {
         int pos=VERSION_POSITION+1;
-        if (encodedValue.length()<VERSION_POSITION+3) return null;
-        int colon = (encodedValue.charAt(pos + 2) == ':' ? 2 : 3);
-        if (colon == 3 && (pos+colon >= encodedValue.length() || encodedValue.charAt(pos+colon) != ':')) {
+        if (encodedValue.length()<VERSION_POSITION+3) {
             throw new RuntimeException("Error: language colon missing");
         }
-        originalText = readString(encodedValue, new MutableInt(pos+colon+1));
-        return encodedValue.substring(pos, pos + colon);
+        int len = (encodedValue.charAt(pos + 2) == ':' ? 2 : 3);
+        originalText = readString(encodedValue, new MutableInt(pos+3));
+        return encodedValue.substring(pos, pos + len);
     }
 
     private String parseOriginalValueWithSeparator(int version) {
@@ -315,12 +322,9 @@ public class TranslatableText {
             return null;
         }
         if (end > pos + 2) {
-            int colon = (encodedValue.charAt(pos + 2) == ':' ? 2 : 3);
-            if (colon == 3 && (end <pos+4 || encodedValue.charAt(pos+colon) != ':')) {
-                throw new RuntimeException("Error: language colon missing");
-            }
-            originalText = encodedValue.substring(pos + colon + 1, end);
-            return encodedValue.substring(pos, pos + colon);
+            int len = (encodedValue.charAt(pos + 2) == ':' ? 2 : 3);
+            originalText = encodedValue.substring(pos + 3, end);
+            return encodedValue.substring(pos, pos + len);
         }
         throw new RuntimeException("Error: language is not an iso code");
     }
@@ -343,22 +347,19 @@ public class TranslatableText {
         char a = language.charAt(0);
         char b = language.charAt(1);
 		char c;
-		int langPos;
 		if (language.length()==2) {
 			c = ':';
-			langPos = 3;
 		} else {
 			c = language.charAt(2);
-			langPos = 4;
 		}
         int pos = delimiter.length()+1;
         while((pos = encodedValue.indexOf(delimiter, pos + 1)) >= 0 && pos < encodedValue.length() - delimiter.length()) {
             if (encodedValue.charAt(pos + delimiter.length()) == a && encodedValue.charAt(pos + delimiter.length() + 1) == b && encodedValue.charAt(pos + delimiter.length() + 2) == c) {
                 int end = encodedValue.indexOf(delimiter, pos + 1);
                 if (end > pos) {
-                    return encodedValue.substring(pos + delimiter.length() + langPos, end);
+                    return encodedValue.substring(pos + delimiter.length() + 3, end);
                 } else {
-                    return encodedValue.substring(pos + delimiter.length() + langPos);
+                    return encodedValue.substring(pos + delimiter.length() + 3);
                 }
             }
         }
@@ -373,11 +374,11 @@ public class TranslatableText {
 		char c = language.length()==2 ? ':' : language.charAt(2);
 
         // skip original language
-        // magic-number + version + language + : + base94length + ~ + text-length
-        MutableInt pos = new MutableInt(DELIMITER.length()+1+originalLanguage.length()+1+ encodedStringLength(originalText));
+        // magic-number + (version=1) + (language=3) + base94length + ~ + text-length
+        MutableInt pos = new MutableInt(DELIMITER.length() + 4 + encodedStringLength(originalText));
         while (pos.intValue() < encodedValue.length()) {
             boolean match = encodedValue.charAt(pos.intValue()) == a && encodedValue.charAt(pos.intValue() + 1) == b && encodedValue.charAt(pos.intValue() + 2) == c;
-            pos.add(encodedValue.charAt(pos.intValue()+2)!=':' ? 4 : 3);
+            pos.add(3);
             if (match) {
                 return readString(encodedValue, pos);
             } else {
@@ -394,7 +395,8 @@ public class TranslatableText {
     }
 
     // method with side effects
-    public Map<String, String> getTranslationMap() {
+    // note: the translationMap does not contain the original language
+    protected Map<String, String> getTranslationMap() {
         if (translationMap != null) {
             return translationMap;
         } else if (encodedValue!=null) {
@@ -458,11 +460,10 @@ public class TranslatableText {
                     pos += delimiter.length();
                     if (encodedValue.charAt(pos + 2) == ':') {
                         language = encodedValue.substring(pos, pos + 2);
-                        value = encodedValue.substring(pos + 3, end);
                     } else {
                         language = encodedValue.substring(pos, pos + 3);
-                        value = encodedValue.substring(pos + 4, end);
                     }
+                    value = encodedValue.substring(pos + 3, end);
                     if (!language.equals(originalLanguage)) {
                         translationMap.put(language, value);
                     } else {
@@ -496,14 +497,22 @@ public class TranslatableText {
     private String createOldEncodedValue() {
         StringBuilder sb = new StringBuilder();
         if (originalText != null && originalLanguage != null) {
-            sb.append(OLD_DELIMITER).append(originalLanguage).append(":").append(originalText);
+            sb.append(OLD_DELIMITER).append(originalLanguage);
+            if (originalLanguage.length()==2) {
+                sb.append(':');
+            }
+            sb.append(originalText);
         }
         if (translationMap==null) {
             initMembersFromEncodedText();
         }
         for (Map.Entry<String, String> entry : translationMap.entrySet()) {
             if (!entry.getKey().equals(originalLanguage)) {
-                sb.append(OLD_DELIMITER).append(entry.getKey()).append(":").append(entry.getValue());
+                sb.append(OLD_DELIMITER).append(entry.getKey());
+                if (entry.getKey().length()==2) {
+                    sb.append(':');
+                }
+                sb.append(entry.getValue());
             }
         }
         sb.append(OLD_DELIMITER);
@@ -547,8 +556,11 @@ public class TranslatableText {
                 throw new RuntimeException("Error: parsing encoded TranslatableText at " + pos.intValue());
             }
             len = len * 94 + (c-32);
+            if (len < 0) {
+                throw new RuntimeException("Error: parsing encoded TranslatableText at " + pos.intValue());
+            }
         }
-        if (begin+len > encodedValue.length()) {
+        if (begin+len >= encodedValue.length()) {
             throw new RuntimeException("Error: parsing encoded TranslatableText at " + pos.intValue());
         }
         pos.setValue(begin+len+1);
@@ -572,14 +584,20 @@ public class TranslatableText {
     public String createLengthEncodedValue() {
         if (isNull(this)) return "";
         StringBuilder sb = new StringBuilder();
-        sb.append(DELIMITER).append('2').append(originalLanguage).append(":");
+        sb.append(DELIMITER).append('2').append(originalLanguage);
+        if (originalLanguage.length()==2) {
+            sb.append(':');
+        }
         writeString(sb, originalText);
         if (translationMap==null) {
             initMembersFromEncodedText();
         }
         for (Map.Entry<String, String> entry : translationMap.entrySet()) {
             if (!entry.getKey().equals(originalLanguage)) {
-                sb.append(entry.getKey()).append(":");
+                sb.append(entry.getKey());
+                if (entry.getKey().length()==2) {
+                    sb.append(':');
+                }
                 writeString(sb, entry.getValue());
             }
         }
@@ -590,10 +608,9 @@ public class TranslatableText {
         // we can assume, that originalLanguage and originalValue are already set correctly
         // so we will not parse the original value here
         translationMap = new HashMap<>();
-        char delimiter = '~';
         MutableInt pos = new MutableInt(DELIMITER.length()+1);
         while(pos.intValue() >= 0 && pos.intValue() < encodedIndexValue.length() - 1) {
-            String language = encodedIndexValue.charAt(pos.intValue() + 2) == ':' ? encodedIndexValue.substring(pos.intValue(), pos.intValue() + 2) : encodedIndexValue.substring(pos.intValue(), pos.incrementAndGet() + 2);
+            String language = encodedIndexValue.substring(pos.intValue(), pos.intValue() + (encodedIndexValue.charAt(pos.intValue() + 2) == ':' ?  2 : 3));
             pos.add(3);
             if (!Objects.equals(language, originalLanguage)) {
                 String value = readString(encodedValue, pos);
@@ -613,14 +630,22 @@ public class TranslatableText {
             if (version > 0) {
                 sb.append((char) (48 + version));
             }
-            sb.append(originalLanguage).append(":").append(originalText);
+            sb.append(originalLanguage);
+            if (originalLanguage.length()==2) {
+                sb.append(':');
+            }
+            sb.append(originalText);
         }
         if (translationMap==null) {
             initMembersFromEncodedText();
         }
         for (Map.Entry<String, String> entry : translationMap.entrySet()) {
             if (!entry.getKey().equals(originalLanguage)) {
-                sb.append(delimiter).append(entry.getKey()).append(":").append(entry.getValue());
+                sb.append(delimiter).append(entry.getKey());
+                if (entry.getKey().length()==2) {
+                    sb.append(':');
+                }
+                sb.append(entry.getValue());
             }
         }
         if (version == 0) {

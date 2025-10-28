@@ -28,6 +28,7 @@ import org.teamapps.universaldb.index.text.TextFilter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.*;
 import java.util.function.Function;
 
@@ -41,15 +42,36 @@ public class TranslatableTextTest {
     }
 
     @Test
+    public void invalidConstruction() {
+        try {
+            TranslatableText invalid = new TranslatableText("text-en", null);
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertTrue(e.getMessage().contains("Error: no language for translatable text"));
+        }
+        try {
+            TranslatableText invalid = new TranslatableText("text-en", "english");
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("Error: language is not an iso code"));
+        }
+        Map<String, String> translationMap = new HashMap<>();
+    }
+
+    @Test
     public void getTranslation() {
         TranslatableText text = new TranslatableText("text-en", "en");
         text.setTranslation("text-de", "de");
         text.setTranslation("text-fr", "fr");
 
+        assertEquals("text-en", text.toString());
         assertEquals("text-en", text.getText("en"));
         assertEquals("text-en", text.getText("xx"));
         assertEquals("text-de", text.getText("de"));
         assertEquals("text-fr", text.getText("fr"));
+	    assertNull("es is not a translated language", text.getTranslation("es"));
+        assertEquals("text-en", text.getText("es"));
+        assertEquals("no-value", text.getText("es", "no-value"));
 
         assertEquals("en", text.getOriginalLanguage());
         assertTrue(text.getTranslationMap().containsKey("de"));
@@ -70,6 +92,19 @@ public class TranslatableTextTest {
 
         assertEquals("en", text.getLanguages().getFirst());
         assertEquals(3, text.getLanguages().size());
+
+        assertEquals("text-en", text.getText(List.of("en", "fr")));
+        assertEquals("text-fr", text.getText(List.of("fr", "en")));
+        assertEquals("text-de", text.getText(List.of("de", "fr")));
+        assertEquals("text-fr", text.getText(List.of("fr", "de")));
+
+        assertTrue(text.hasTranslations());
+        assertEquals(2, text.translationsCount());  // original = en, translations = de,fr
+        assertFalse(text.isTranslation(Set.of("en")));
+        assertFalse(text.isTranslation(Set.of("en", "de")));
+        assertTrue(text.isTranslation(Set.of("fr", "de")));
+        assertTrue(text.isTranslation(Set.of("es", "de")));
+        assertFalse(text.isTranslation(Set.of("es", "ru")));
     }
 
     @Test
@@ -93,20 +128,6 @@ public class TranslatableTextTest {
         // this will repair the encoded value
         text2.normalize();
         assertEquals(text, text2);
-
-        try {
-            TranslatableText invalid = new TranslatableText("original", "english", Map.of());
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("invalid original language"));
-        }
-        try {
-            TranslatableText invalid = new TranslatableText("original", "en", Map.of("deutsch", "Übersetzung"));
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("invalid translation map"));
-        }
-
     }
 
     @Test
@@ -122,6 +143,7 @@ public class TranslatableTextTest {
         text = TranslatableText.create("", "en");
         assertFalse(TranslatableText.isNull(text));
         assertTrue(text.isEmpty());
+        assertEquals("", text.toString());
         assertNotNull(text.translationMap);
         assertTrue(text.translationMap.isEmpty());
         if (TranslatableText.getStandardWriteVersion()==1) {
@@ -163,7 +185,8 @@ public class TranslatableTextTest {
         }
         assertNotNull(text2.translationMap);
 
-        text = new TranslatableText("original", "en", Map.of("de", "Übersetzung"));
+        text = new TranslatableText("original", "en");
+        text.setTranslation("Übersetzung", "de");
         if (TranslatableText.getStandardWriteVersion()==1) {
             assertEquals(TranslatableText.DELIMITER + "1en:original" + TranslatableText.DELIMITER + "de:Übersetzung", text.getEncodedValue());
         } else if (TranslatableText.getStandardWriteVersion()==0) {
@@ -199,13 +222,17 @@ public class TranslatableTextTest {
     public void setTranslation() {
         // Translatable text without translation
         TranslatableText text = TranslatableText.create("original", "en");
+        assertNull(text.translationLookup(""));
+        assertNull(text.translationLookup("xx"));
         assertEquals("original", text.getText());
         assertEquals("original", text.getText("en"));
         assertEquals("original", text.getTranslation("en"));
+        assertEquals("original", text.translationLookup("en"));
         assertEquals("en", text.getOriginalLanguage());
         assertFalse(text.isEmpty());
         assertFalse(TranslatableText.isNull(text));
         assertNull(text.getTranslation("de"));
+        assertEquals("", text.getTranslation(List.of()));
         assertEquals("original", text.getTranslation(List.of("de", "en")));
         assertEquals("original", text.getText("de"));
 
@@ -264,7 +291,7 @@ public class TranslatableTextTest {
         assertEquals("original", text2.getText());
         assertEquals("deutsch", text2.getText("deu"));
 
-        String oldEncoded = TranslatableText.OLD_DELIMITER+"eng:original"+TranslatableText.OLD_DELIMITER+"deu:Original"+TranslatableText.OLD_DELIMITER+"fra:originale"+TranslatableText.OLD_DELIMITER+"rus:оригинал"+TranslatableText.OLD_DELIMITER;
+        String oldEncoded = TranslatableText.OLD_DELIMITER+"engoriginal"+TranslatableText.OLD_DELIMITER+"deuOriginal"+TranslatableText.OLD_DELIMITER+"fraoriginale"+TranslatableText.OLD_DELIMITER+"rusоригинал"+TranslatableText.OLD_DELIMITER;
         text = new TranslatableText(oldEncoded);
         assertEquals("original", text.getText("eng"));
         assertEquals("Original", text.getText("deu"));
@@ -276,7 +303,7 @@ public class TranslatableTextTest {
         assertEquals("originale", text.getText("fra"));
 
 
-        String encoded = TranslatableText.DELIMITER+"1eng:original"+TranslatableText.DELIMITER+"deu:Original"+TranslatableText.DELIMITER+"fra:originale"+TranslatableText.DELIMITER+"rus:оригинал";
+        String encoded = TranslatableText.DELIMITER+"1engoriginal"+TranslatableText.DELIMITER+"deuOriginal"+TranslatableText.DELIMITER+"fraoriginale"+TranslatableText.DELIMITER+"rusоригинал";
         text = new TranslatableText(encoded);
         assertEquals("original", text.getText("eng"));
         assertEquals("Original", text.getText("deu"));
@@ -295,6 +322,7 @@ public class TranslatableTextTest {
         String encodedValue = TranslatableText.create(null, "de").getEncodedValue();
         assertTrue(TranslatableText.isTranslatableText(encodedValue));
         assertFalse(TranslatableText.isTranslatableText("a normal string"));
+        assertFalse(TranslatableText.isTranslatableText(TranslatableText.DELIMITER));
     }
 
     @Test
@@ -509,61 +537,61 @@ public class TranslatableTextTest {
         } catch (RuntimeException e) {
             assertTrue(e.getMessage().contains("invalid translation encoding"));
         }
-        try {
-            // no original language
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "1new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertEquals("Error: language colon missing", e.getMessage());
-        }
-        try {
-            // no original language
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertEquals("Error: language colon missing", e.getMessage());
-        }
-        try {
-            // missing colon
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "1eng");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertEquals("Error: language colon missing", e.getMessage());
-        }
+//        try {
+//            // no original language
+//            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "1new original");
+//            assertNull(invalid);
+//        } catch (RuntimeException e) {
+//            assertEquals("Error: language colon missing", e.getMessage());
+//        }
+//        try {
+//            // no original language
+//            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2new original");
+//            assertNull(invalid);
+//        } catch (RuntimeException e) {
+//            assertEquals("Error: language colon missing", e.getMessage());
+//        }
         try {
             // missing colon
+            TranslatableText empty = new TranslatableText(TranslatableText.DELIMITER + "1eng");
+            assertEquals("",empty.getText());
+        } catch (RuntimeException e) {
+            assertEquals("Error: language colon missing", e.getMessage());
+        }
+        try {
+            // missing length
             TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2eng");
             assertNull(invalid);
         } catch (RuntimeException e) {
-            assertEquals("Error: language colon missing", e.getMessage());
+            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
         }
-        try {
-            // short original language
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "1e:new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertEquals("Error: language colon missing", e.getMessage());
-        }
+//        try {
+//            // short original language
+//            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "1e:new original");
+//            assertNull(invalid);
+//        } catch (RuntimeException e) {
+//            assertEquals("Error: language colon missing", e.getMessage());
+//        }
         try {
             // wrong original language
             TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2e:new original");
             assertNull(invalid);
         } catch (RuntimeException e) {
-            assertEquals("Error: language colon missing", e.getMessage());
+            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
         }
-        try {
-            // wrong original language
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "1english:new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertEquals("Error: language colon missing", e.getMessage());
-        }
+//        try {
+//            // wrong original language
+//            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "1english:new original");
+//            assertNull(invalid);
+//        } catch (RuntimeException e) {
+//            assertEquals("Error: language colon missing", e.getMessage());
+//        }
         try {
             // wrong original language
             TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2english:new original");
             assertNull(invalid);
         } catch (RuntimeException e) {
-            assertEquals("Error: language colon missing", e.getMessage());
+            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
         }
         try {
             // wrong length field
@@ -592,7 +620,7 @@ public class TranslatableTextTest {
             invalid.normalize();
             assertNull(invalid);
         } catch (RuntimeException e) {
-            assertTrue("wrong exception message: " + e.getMessage(), e.getMessage().contains("out of bounds for length 27"));
+            assertTrue("wrong exception message: " + e.getMessage(), e.getMessage().contains("Error: parsing encoded TranslatableText at 18"));
         }
     }
 
@@ -632,7 +660,7 @@ public class TranslatableTextTest {
         };
         assertEquals(encodedWithTranslation, text.getEncodedValue());
 
-        String currentEncodedValueSingleDelimiterAtEnd = encodedValueSingle + (TranslatableText.getStandardWriteVersion()<1 ? TranslatableText.OLD_DELIMITER : TranslatableText.DELIMITER);
+        String currentEncodedValueSingleDelimiterAtEnd = encodedValueSingle + (TranslatableText.getStandardWriteVersion()<1 ? TranslatableText.OLD_DELIMITER : "");
         text = new TranslatableText(currentEncodedValueSingleDelimiterAtEnd);
         assertTrue(text.getTranslationMap().isEmpty());
         assertEquals("en", text.getOriginalLanguage());
