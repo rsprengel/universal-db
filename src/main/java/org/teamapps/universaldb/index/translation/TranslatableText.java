@@ -543,7 +543,13 @@ public class TranslatableText {
         for (; begin<encodedValue.length(); ++begin) {
             char c = encodedValue.charAt(begin);
             if (c == '~') break;
+            if (c < ' ' || c > '~') {
+                throw new RuntimeException("Error: parsing encoded TranslatableText at " + pos.intValue());
+            }
             len = len * 94 + (c-32);
+        }
+        if (begin+len > encodedValue.length()) {
+            throw new RuntimeException("Error: parsing encoded TranslatableText at " + pos.intValue());
         }
         pos.setValue(begin+len+1);
         return encodedValue.substring(begin+1, pos.getValue());
@@ -555,6 +561,9 @@ public class TranslatableText {
         for (; begin<encodedValue.length(); ++begin) {
             char c = encodedValue.charAt(begin);
             if (c == '~') break;
+            if (c < ' ' || c > '~') {
+                throw new RuntimeException("Error: parsing encoded TranslatableText at " + pos.intValue());
+            }
             len = len * 94 + (c-32);
         }
         pos.setValue(begin+len+1);

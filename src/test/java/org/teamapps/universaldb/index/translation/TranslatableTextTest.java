@@ -19,6 +19,7 @@
  */
 package org.teamapps.universaldb.index.translation;
 
+import org.apache.commons.collections4.splitmap.AbstractIterableGetMapDecorator;
 import org.apache.commons.lang3.StringUtils;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -563,6 +564,35 @@ public class TranslatableTextTest {
             assertNull(invalid);
         } catch (RuntimeException e) {
             assertEquals("Error: language colon missing", e.getMessage());
+        }
+        try {
+            // wrong length field
+            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2en:€~new original");
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
+        }
+        try {
+            // wrong length field
+            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2en:\r~new original");
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
+        }
+        try {
+            // wrong length field
+            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2en:12~new original");
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
+        }
+        try {
+            // wrong length field
+            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2en: ~new original");
+            invalid.normalize();
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertTrue("wrong exception message: " + e.getMessage(), e.getMessage().contains("out of bounds for length 27"));
         }
     }
 
