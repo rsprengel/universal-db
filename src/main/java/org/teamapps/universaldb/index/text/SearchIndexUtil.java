@@ -55,6 +55,9 @@ public class SearchIndexUtil {
 		List<String> textParts = analyze(value, analyzer);
 		BooleanQuery.Builder termQueries = new BooleanQuery.Builder();
 		boolean containsOnlyNegationQueries = false;
+		if (textParts!=null && textParts.size() > 10 && filterType.containsFullTextEquals()) {
+			textParts = textParts.subList(0, 10);
+		}
 		for (String textPart : textParts) {
 			Term term = new Term(fieldName, textPart);
 			switch (filterType) {

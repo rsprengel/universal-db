@@ -85,4 +85,14 @@ public enum TextFilterType {
 		}
 	}
 
+	public boolean containsFullTextEquals() {
+		switch (this) {
+			case TEXT_EQUALS:
+			case TEXT_EQUALS_IGNORE_CASE:
+			case TEXT_NOT_EQUALS:
+				return true;
+			default:
+				return false;
+		}
+	}
 }

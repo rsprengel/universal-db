@@ -172,6 +172,32 @@ public class TranslatableTextDatabaseTest {
 	}
 
 	@Test
+	public void searchEqualsVeryLargeNumberOfTerms() {
+		UserContext context = UserContext.create("de", "nl", "en", "fr", "zh", "ja", "he", "el");
+		String[] german = readLanguage("german");
+
+		String search = german[10];
+		assertFalse(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter(search, context))
+				.execute().isEmpty());
+		assertFalse(FieldTest.filter().translatableText(TranslatableTextFilter.textNotEqualsFilter(search, context))
+				.execute().isEmpty());
+
+		search = search + " noch was";
+		assertTrue(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter(search, context))
+				.execute().isEmpty());
+
+		assertFalse(FieldTest.filter().translatableText(TranslatableTextFilter.textNotEqualsFilter(search, context))
+				.execute().isEmpty());
+
+		assertFalse(FieldTest.filter().translatableText(TranslatableTextFilter.termEqualsFilter("hauswesen neugierig", context))
+				.execute().isEmpty());
+
+//		assertFalse(FieldTest.filter().translatableText(TranslatableTextFilter.termEqualsFilter(search, context))
+//				.execute().isEmpty());
+
+	}
+
+	@Test
 	public void searchBenchMark() {
 		String[] english = readLanguage("english");
 		String[] german = readLanguage("german");
@@ -200,7 +226,7 @@ public class TranslatableTextDatabaseTest {
 			noMatchTime = System.nanoTime() - noMatchTime;
 
 			long germanTime = System.nanoTime();
-			for (int germanInx=0; germanInx<10; ++germanInx) {
+			for (int germanInx=0; germanInx<11; ++germanInx) {
 				String search = german[germanInx];
 				assertFalse(FieldTest.filter().translatableText(TranslatableTextFilter.textEqualsFilter(search, context))
 						.execute().isEmpty());
