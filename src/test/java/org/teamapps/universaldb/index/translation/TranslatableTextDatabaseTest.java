@@ -31,6 +31,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 import org.teamapps.datamodel.testdb1.FieldTest;
@@ -230,47 +231,48 @@ public class TranslatableTextDatabaseTest {
 		// sequence of language in encodedText: en, de, ja, el, fr, he, nl, zh
 		TranslatableText text = FieldTest.filter().textField(TextFilter.textEqualsFilter("Test.ID11")).executeExpectSingleton().getTranslatableText();
 		String[] languages = {"de", "nl", "en", "fr", "zh", "ja", "he", "el"};
-		for (String language : languages) {
-			long start = System.nanoTime();
-			for (int i = 0; i < 1000; ++i) {
-				assertTrue(text.contains(language));
-				String value = text.getText(language);
-				assertNotNull(value);
+		for (int j=0; j<2; ++j) {
+			TranslatableText freshText = new TranslatableText(text.getEncodedValue());
+			for (String language : languages) {
+				long start = System.nanoTime();
+				for (int i = 0; i < 1000; ++i) {
+					assertTrue(freshText.contains(language));
+					String value = freshText.getText(language);
+					assertNotNull(value);
+				}
+				long finish = System.nanoTime();
+				System.out.println("getText(\"" + language + "\")=" + (finish - start) / 1000_000.0d + "ms");
 			}
-			long finish = System.nanoTime();
-			System.out.println("getText(\""+language+"\")=" + (finish - start) / 1000_000.0d + "ms");
 		}
-		long start = System.nanoTime();
-		for (int i = 0; i < 1000; ++i) {
-			assertTrue(text.contains("en"));
-			String value = text.getText("en");
-			assertNotNull(value);
-		}
-		long finish = System.nanoTime();
-		System.out.println("getText(\"en\")=" + (finish - start) / 1000_000.0d + "ms");
 	}
 
 	public void measureEncodeDecode(String prefix, Function<TranslatableText, String> encode) throws IOException {
 		int loops = 10;
-		int size = 100_000;
+		int size = 10_000;
 		long fullTimeEncode = 0;
+		long fullTimeGet = 0;
 		long fullTimeDecode = 0;
-		long minEncode = 1_000_000_000;
+		long minEncode = Long.MAX_VALUE;
+		long maxGet = 0;
+		long minGet = Long.MAX_VALUE;
 		long maxEncode = 0;
-		long minDecode = 1_000_000_000;
+		long minDecode = Long.MAX_VALUE;
 		long maxDecode = 0;
 		String[] languages = {"de", "nl", "en", "fr", "zh", "ja", "he", "el"};
 		TranslatableText text = FieldTest.filter().textField(TextFilter.textEqualsFilter("Test.ID11")).executeExpectSingleton().getTranslatableText();
+		String encodedValue = encode.apply(text);
 		System.out.println(prefix + " text encoding:...");
+		System.out.printf("  length=%,d UTF8=%,d\n", encodedValue.length(), encodedValue.getBytes(StandardCharsets.UTF_8).length);
 		for (int n = 0; n < loops; n++) {
-			long startTime = System.nanoTime();
+			long startTime = System.currentTimeMillis();
 			List<String> encodedList = new ArrayList<>(size);
 			for (int i = 0; i < size; i++) {
 				String encoded = encode.apply(text);
 				encodedList.add(encoded);
 			}
-			long encodeDuration = (System.nanoTime() - startTime)/1000;
-			startTime = System.nanoTime();
+			long encodeDuration = System.currentTimeMillis() - startTime;
+
+			startTime = System.currentTimeMillis();
 			for (int i = 0; i < size; i++) {
 				String value = encodedList.get(i);
 				TranslatableText translatableText = new TranslatableText(value);
@@ -280,20 +282,34 @@ public class TranslatableTextDatabaseTest {
 					}
 				}
 			}
-			long decodeDuration = (System.nanoTime() - startTime)/1000;
+			long getTranslationDuration = System.currentTimeMillis() - startTime;
+
+			startTime = System.currentTimeMillis();
+			for (int i = 0; i < size; i++) {
+				String value = encodedList.get(i);
+				TranslatableText translatableText = new TranslatableText(value);
+				Map<String, String> map = translatableText.getTranslationMap();
+				assertEquals(7, map.size());
+			}
+			long decodeDuration = System.currentTimeMillis() - startTime;
+
 			if (n == 0) {
-				System.out.println("  First " + prefix + " encode: " + encodeDuration / 1_000.0d + "  First " + prefix + " decode: " + decodeDuration / 1_000.0d);
+				System.out.printf("  First encode: %,dms First decode: %,dms\n", encodeDuration, decodeDuration);
 			} else {
 				fullTimeEncode += encodeDuration;
+				fullTimeGet += getTranslationDuration;
 				fullTimeDecode += decodeDuration;
 				if (encodeDuration < minEncode) minEncode = encodeDuration;
 				if (encodeDuration > maxEncode) maxEncode = encodeDuration;
+				if (getTranslationDuration < minGet) minGet = getTranslationDuration;
+				if (getTranslationDuration > maxGet) maxGet = getTranslationDuration;
 				if (decodeDuration < minDecode) minDecode = decodeDuration;
 				if (decodeDuration > maxDecode) maxDecode = decodeDuration;
 			}
 		}
-		System.out.println("  Time  " + prefix + " encode: " + fullTimeEncode / (loops - 1)  / 1_000.0d + " min=" + minEncode / 1_000.0d + " max=" + maxEncode / 1_000.0d);
-		System.out.println("  Time  " + prefix + " decode: " + fullTimeDecode / (loops - 1)  / 1_000.0d + " min=" + minDecode / 1_000.0d + " max=" + maxDecode / 1_000.0d);
+		System.out.printf("  Time  encode: %,dms  min=%,dms max=%,dms\n", fullTimeEncode / (loops - 1), minEncode, maxEncode);
+		System.out.printf("  Time  get   : %,dms  min=%,dms max=%,dms\n", fullTimeGet / (loops - 1), minGet, maxGet);
+		System.out.printf("  Time  decode: %,dms  min=%,dms max=%,dms\n", fullTimeDecode / (loops - 1), minDecode, maxDecode);
 	}
 
 	@Test

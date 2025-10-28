@@ -445,32 +445,32 @@ public class TranslatableText {
         translationMap = new HashMap<>();
         int version = parseVersion(encodedValue);
         if (version == 2) {
-            createTranslationMapFromIndexValue(encodedValue);
-            return;
-        }
-        String delimiter = getDelimiter(encodedValue);
-        int pos = delimiter.length()+1+originalText.length();
-        while((pos = encodedValue.indexOf(delimiter, pos + 1)) >= 0) {
-            int end = encodedValue.indexOf(delimiter, pos + delimiter.length());
-            if (end < 0) end = encodedValue.length();
-            if (end > pos + delimiter.length()) {
-				String language;
-				String value;
-                pos += delimiter.length();
-				if (encodedValue.charAt(pos+2)==':') {
-					language = encodedValue.substring(pos, pos + 2);
-					value = encodedValue.substring(pos + 3, end);
-				} else {
-					language = encodedValue.substring(pos, pos + 3);
-					value = encodedValue.substring(pos + 4, end);
-				}
-                if (!language.equals(originalLanguage)) {
-                    translationMap.put(language, value);
-                } else {
-                    // @todo: or should we ignore the new value of the original text?
-                    originalText=value;
+            createTranslationMapFromLengthEncodedValue(encodedValue);
+        } else if (version >= 0) {
+            String delimiter = getDelimiter(encodedValue);
+            int pos = delimiter.length() + 1 + originalText.length();
+            while ((pos = encodedValue.indexOf(delimiter, pos + 1)) >= 0) {
+                int end = encodedValue.indexOf(delimiter, pos + delimiter.length());
+                if (end < 0) end = encodedValue.length();
+                if (end > pos + delimiter.length()) {
+                    String language;
+                    String value;
+                    pos += delimiter.length();
+                    if (encodedValue.charAt(pos + 2) == ':') {
+                        language = encodedValue.substring(pos, pos + 2);
+                        value = encodedValue.substring(pos + 3, end);
+                    } else {
+                        language = encodedValue.substring(pos, pos + 3);
+                        value = encodedValue.substring(pos + 4, end);
+                    }
+                    if (!language.equals(originalLanguage)) {
+                        translationMap.put(language, value);
+                    } else {
+                        // @todo: or should we ignore the new value of the original text?
+                        originalText = value;
+                    }
+                    pos = end - 1;
                 }
-	            pos = end - 1;
             }
         }
     }
@@ -498,11 +498,12 @@ public class TranslatableText {
         if (originalText != null && originalLanguage != null) {
             sb.append(OLD_DELIMITER).append(originalLanguage).append(":").append(originalText);
         }
-        if (translationMap != null) {
-            for (Map.Entry<String, String> entry : translationMap.entrySet()) {
-                if (!entry.getKey().equals(originalLanguage)) {
-                    sb.append(OLD_DELIMITER).append(entry.getKey()).append(":").append(entry.getValue());
-                }
+        if (translationMap==null) {
+            initMembersFromEncodedText();
+        }
+        for (Map.Entry<String, String> entry : translationMap.entrySet()) {
+            if (!entry.getKey().equals(originalLanguage)) {
+                sb.append(OLD_DELIMITER).append(entry.getKey()).append(":").append(entry.getValue());
             }
         }
         sb.append(OLD_DELIMITER);
@@ -564,18 +565,19 @@ public class TranslatableText {
         StringBuilder sb = new StringBuilder();
         sb.append(DELIMITER).append('2').append(originalLanguage).append(":");
         writeString(sb, originalText);
-        if (translationMap != null) {
-            for (Map.Entry<String, String> entry : translationMap.entrySet()) {
-                if (!entry.getKey().equals(originalLanguage)) {
-                    sb.append(entry.getKey()).append(":");
-                    writeString(sb, entry.getValue());
-                }
+        if (translationMap==null) {
+            initMembersFromEncodedText();
+        }
+        for (Map.Entry<String, String> entry : translationMap.entrySet()) {
+            if (!entry.getKey().equals(originalLanguage)) {
+                sb.append(entry.getKey()).append(":");
+                writeString(sb, entry.getValue());
             }
         }
         return sb.toString();
     }
 
-    public void createTranslationMapFromIndexValue(String encodedIndexValue) {
+    public void createTranslationMapFromLengthEncodedValue(String encodedIndexValue) {
         // we can assume, that originalLanguage and originalValue are already set correctly
         // so we will not parse the original value here
         translationMap = new HashMap<>();
@@ -604,11 +606,12 @@ public class TranslatableText {
             }
             sb.append(originalLanguage).append(":").append(originalText);
         }
-        if (translationMap != null) {
-            for (Map.Entry<String, String> entry : translationMap.entrySet()) {
-                if (!entry.getKey().equals(originalLanguage)) {
-                    sb.append(delimiter).append(entry.getKey()).append(":").append(entry.getValue());
-                }
+        if (translationMap==null) {
+            initMembersFromEncodedText();
+        }
+        for (Map.Entry<String, String> entry : translationMap.entrySet()) {
+            if (!entry.getKey().equals(originalLanguage)) {
+                sb.append(delimiter).append(entry.getKey()).append(":").append(entry.getValue());
             }
         }
         if (version == 0) {
