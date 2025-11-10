@@ -315,7 +315,7 @@ public class TranslatableTextDatabaseTest {
 				String value = encodedList.get(i);
 				TranslatableText translatableText = new TranslatableText(value);
 				Map<String, String> map = translatableText.getTranslationMap();
-				assertEquals(7, map.size());
+				assertEquals(8, map.size());
 			}
 			long decodeDuration = System.currentTimeMillis() - startTime;
 

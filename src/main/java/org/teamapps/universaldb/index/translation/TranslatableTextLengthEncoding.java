@@ -29,14 +29,9 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.*;
 
-public class TranslatableText implements  TranslatableTextIf {
+public class TranslatableTextLengthEncoding implements TranslatableTextIf {
 
-    private final static int MAX_VERSION = 2;
-//    protected final static String DELIMITER = "\u200B";
     protected final static int VERSION_POSITION = DELIMITER.length();
-
-    // this can be changed before first use
-    private static int STANDARD_VERSION = 2;
 
     private final String originalLanguage;
     private String originalText;
@@ -55,36 +50,19 @@ public class TranslatableText implements  TranslatableTextIf {
     // translatableMap should contain only translations and not the original language (but is not inconsistent otherwise)
     // encodedValue must have original language as first entry and should not duplicate a language (but is not inconsistent otherwise)
 
-    public static int getStandardWriteVersion() {
-        return STANDARD_VERSION;
+    public static Integer getStandardWriteVersion() {
+        return 2;
     }
 
-    public static void setStandardWriteVersion(int version) {
-        if (version >= 0 && version <= MAX_VERSION) {
-            STANDARD_VERSION = version;
-        }
-    }
-
-    public static boolean isTranslatableText(String encodedValue) {
-	    return encodedValue == null ||
-			    encodedValue.isEmpty() ||
-			    (encodedValue.startsWith(OLD_DELIMITER) && encodedValue.endsWith(OLD_DELIMITER)) ||
-			    (encodedValue.startsWith(DELIMITER) && encodedValue.length() >= DELIMITER.length() + 1);
-    }
-
-    public static boolean isNull(TranslatableText text) {
+    public static boolean isNull(TranslatableTextLengthEncoding text) {
         return text==null || text.originalLanguage==null;
     }
 
-    public static TranslatableText create(String originalText, String originalLanguage) {
-        return new TranslatableText(originalText, originalLanguage);
-    }
-
-    public TranslatableText() {
+    public TranslatableTextLengthEncoding() {
         originalLanguage = null;
     }
 
-    public TranslatableText(String originalText, String originalLanguage) {
+    public TranslatableTextLengthEncoding(String originalText, String originalLanguage) {
         if (originalLanguage == null) {
             throw new RuntimeException("Error: no language for translatable text");
         }
@@ -96,15 +74,15 @@ public class TranslatableText implements  TranslatableTextIf {
         this.translationMap = new HashMap<>();
     }
 
-    public TranslatableText(String encodedValue) {
-        if (!isTranslatableText(encodedValue)) {
+    public TranslatableTextLengthEncoding(String encodedValue) {
+        if (!TranslatableTextIf.isTranslatableText(encodedValue)) {
             throw new RuntimeException("Error: invalid translation encoding:" + encodedValue);
         }
         this.encodedValue = encodedValue;
         this.originalLanguage = parseOriginalValue();
     }
 
-    public TranslatableText(DataInputStream dataInputStream) throws IOException {
+    public TranslatableTextLengthEncoding(DataInputStream dataInputStream) throws IOException {
         this(DataStreamUtil.readStringWithLengthHeader(dataInputStream));
     }
 
@@ -152,9 +130,11 @@ public class TranslatableText implements  TranslatableTextIf {
         if (languages.contains(originalLanguage)) {
             return false;
         }
-        Map<String, String> map = getInternTranslationMap();
+        if (translationMap==null) {
+            initMembersFromEncodedText();
+        }
         for (String language : languages) {
-            if (map.containsKey(language)) {
+            if (translationMap.containsKey(language)) {
                 return true;
             }
         }
@@ -228,7 +208,7 @@ public class TranslatableText implements  TranslatableTextIf {
         return null;
     }
 
-    public TranslatableText setTranslation(String translation, String language) {
+    public TranslatableTextLengthEncoding setTranslation(String translation, String language) {
         if (translation == null || translation.isEmpty() || language == null || (language.length() != 2 && language.length() != 3)) {
             return this;
         }
@@ -479,49 +459,6 @@ public class TranslatableText implements  TranslatableTextIf {
         }
     }
 
-    // for test classes
-    protected String createEncodedValue(int version) {
-        if (encodedValue==null) {
-            if (STANDARD_VERSION == version) {
-                return getEncodedValue();
-            }
-        } else if (encodedValue.length()>1 && encodedValue.charAt(VERSION_POSITION) + 48 == version) {
-            return encodedValue;
-        }
-        if (version == 0) {
-            return createOldEncodedValue();
-        } else if (version == 2) {
-            return createLengthEncodedValue();
-        } else {
-            return createSeparatedEncodedValue(1, DELIMITER);
-        }
-    }
-
-    private String createOldEncodedValue() {
-        StringBuilder sb = new StringBuilder();
-        if (originalText != null && originalLanguage != null) {
-            sb.append(OLD_DELIMITER).append(originalLanguage);
-            if (originalLanguage.length()==2) {
-                sb.append(':');
-            }
-            sb.append(originalText);
-        }
-        if (translationMap==null) {
-            initMembersFromEncodedText();
-        }
-        for (Map.Entry<String, String> entry : translationMap.entrySet()) {
-            if (!entry.getKey().equals(originalLanguage)) {
-                sb.append(OLD_DELIMITER).append(entry.getKey());
-                if (entry.getKey().length()==2) {
-                    sb.append(':');
-                }
-                sb.append(entry.getValue());
-            }
-        }
-        sb.append(OLD_DELIMITER);
-        return sb.toString();
-    }
-
     public static void writeString(StringBuilder sb, String text) {
         int length;
         if (text==null || (length=text.length()) == 0) {
@@ -584,7 +521,25 @@ public class TranslatableText implements  TranslatableTextIf {
         pos.setValue(begin+len+1);
     }
 
-    public String createLengthEncodedValue() {
+    public void createTranslationMapFromLengthEncodedValue(String encodedIndexValue) {
+        // we can assume, that originalLanguage and originalValue are already set correctly
+        // so we will not parse the original value here
+        translationMap = new HashMap<>();
+        MutableInt pos = new MutableInt(DELIMITER.length()+1);
+        while(pos.intValue() >= 0 && pos.intValue() < encodedIndexValue.length() - 1) {
+            String language = encodedIndexValue.substring(pos.intValue(), pos.intValue() + (encodedIndexValue.charAt(pos.intValue() + 2) == ':' ?  2 : 3));
+            pos.add(3);
+            if (!Objects.equals(language, originalLanguage)) {
+                String value = readString(encodedValue, pos);
+                translationMap.put(language, value);
+            } else {
+                skipString(encodedValue, pos);
+            }
+        }
+    }
+
+
+    protected String createEncodedValue() {
         if (isNull(this)) return "";
         StringBuilder sb = new StringBuilder();
         sb.append(DELIMITER).append('2').append(originalLanguage);
@@ -607,80 +562,21 @@ public class TranslatableText implements  TranslatableTextIf {
         return sb.toString();
     }
 
-    public void createTranslationMapFromLengthEncodedValue(String encodedIndexValue) {
-        // we can assume, that originalLanguage and originalValue are already set correctly
-        // so we will not parse the original value here
-        translationMap = new HashMap<>();
-        MutableInt pos = new MutableInt(DELIMITER.length()+1);
-        while(pos.intValue() >= 0 && pos.intValue() < encodedIndexValue.length() - 1) {
-            String language = encodedIndexValue.substring(pos.intValue(), pos.intValue() + (encodedIndexValue.charAt(pos.intValue() + 2) == ':' ?  2 : 3));
-            pos.add(3);
-            if (!Objects.equals(language, originalLanguage)) {
-                String value = readString(encodedValue, pos);
-                translationMap.put(language, value);
-            } else {
-                skipString(encodedValue, pos);
-            }
-        }
-    }
-
-
-    // method with side effects
-    private String createSeparatedEncodedValue(int version, String delimiter) {
-        StringBuilder sb = new StringBuilder();
-        if (originalText != null && originalLanguage != null) {
-            sb.append(delimiter);
-            if (version > 0) {
-                sb.append((char) (48 + version));
-            }
-            sb.append(originalLanguage);
-            if (originalLanguage.length()==2) {
-                sb.append(':');
-            }
-            sb.append(originalText);
-        }
-        if (translationMap==null) {
-            initMembersFromEncodedText();
-        }
-        for (Map.Entry<String, String> entry : translationMap.entrySet()) {
-            if (!entry.getKey().equals(originalLanguage)) {
-                sb.append(delimiter).append(entry.getKey());
-                if (entry.getKey().length()==2) {
-                    sb.append(':');
-                }
-                sb.append(entry.getValue());
-            }
-        }
-        if (version == 0) {
-            sb.append(delimiter);
-        }
-        return sb.toString();
-    }
-
-    private String createEncodedValue() {
-	    return switch (STANDARD_VERSION) {
-		    case 0 -> createSeparatedEncodedValue(STANDARD_VERSION, OLD_DELIMITER);
-		    case 1 -> createSeparatedEncodedValue(STANDARD_VERSION, DELIMITER);
-		    case 2 -> createLengthEncodedValue();
-		    default -> "";
-	    };
-    }
-
     // method with side effects
     @Override
     public boolean equals(Object o) {
         if (!equalsOriginal(o)) return false;
         if (originalLanguage==null) return true;
-        if (!(o instanceof TranslatableTextIf that)) return false;
-        if (translationMap!=null) {
-            return getTranslationMap().equals(that.getTranslationMap());
+        TranslatableTextLengthEncoding that = (TranslatableTextLengthEncoding) o;
+        if (translationMap!=null && that.translationMap!=null) {
+            return translationMap.equals(that.translationMap);
         }
         String thatEncoded = that.getEncodedValue();
-        if (encodedValue!=null && thatEncoded!=null && thatEncoded.charAt(VERSION_POSITION)==encodedValue.charAt(VERSION_POSITION)) {
+        if (encodedValue!=null && that.encodedValue!=null && thatEncoded.charAt(VERSION_POSITION)==encodedValue.charAt(VERSION_POSITION)) {
             return Objects.equals(getEncodedValue(), thatEncoded);
         }
         // version of encoding is different
-        return Objects.equals(getTranslationMap(), that.getTranslationMap());
+        return Objects.equals(getInternTranslationMap(), that.getInternTranslationMap());
     }
 
     // method with side effects
@@ -690,16 +586,8 @@ public class TranslatableText implements  TranslatableTextIf {
     }
 
     public boolean equalsOriginal(Object o) {
-        if (!(o instanceof TranslatableTextIf that)) return false;
-	    return Objects.equals(originalText, that.getText()) && Objects.equals(originalLanguage, that.getOriginalLanguage());
+        if (o == null || getClass() != o.getClass()) return false;
+        TranslatableTextLengthEncoding that = (TranslatableTextLengthEncoding) o;
+        return Objects.equals(originalText, that.originalText) && Objects.equals(originalLanguage, that.originalLanguage);
     }
-
-//    @Override
-//    public int hashCode() {
-//        if (originalLanguage==null && encodedValue!=null) {
-//            computeMemberFromEncodedText();
-//        }
-//        return Objects.hash(originalText, originalLanguage);
-//    }
-//
 }

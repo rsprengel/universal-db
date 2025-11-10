@@ -19,48 +19,137 @@
  */
 package org.teamapps.universaldb.index.translation;
 
-import org.apache.commons.collections4.splitmap.AbstractIterableGetMapDecorator;
-import org.apache.commons.lang3.StringUtils;
-import org.junit.BeforeClass;
 import org.junit.Test;
-import org.teamapps.datamodel.testdb1.FieldTest;
-import org.teamapps.universaldb.index.text.TextFilter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.text.Normalizer;
 import java.util.*;
-import java.util.function.Function;
 
 import static org.junit.Assert.*;
 
 public class TranslatableTextTest {
 
-    @BeforeClass
-    public static void init() throws Exception {
-//        TranslatableText.getStandardVersion() = 0;
-    }
-
     @Test
     public void invalidConstruction() {
         try {
-            TranslatableText invalid = new TranslatableText("text-en", null);
+            TranslatableTextIf invalid = TranslatableTextIf.create("text-en", null);
             assertNull(invalid);
         } catch (RuntimeException e) {
             assertTrue(e.getMessage().contains("Error: no language for translatable text"));
         }
         try {
-            TranslatableText invalid = new TranslatableText("text-en", "english");
+            TranslatableTextIf invalid = TranslatableTextIf.create("text-en", "english");
             assertNull(invalid);
         } catch (RuntimeException e) {
             assertTrue(e.getMessage(), e.getMessage().contains("Error: language is not an iso code"));
         }
-        Map<String, String> translationMap = new HashMap<>();
+        try {
+            // does not end with DELIMITER
+            TranslatableTextIf invalid = TranslatableTextIf.create(TranslatableTextIf.OLD_DELIMITER + "en:new original");
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertTrue(e.getMessage().contains("invalid translation encoding"));
+        }
+        try {
+            // does not start with DELIMITER
+            TranslatableTextIf invalid = TranslatableTextIf.create("en:new original" + TranslatableTextIf.OLD_DELIMITER);
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertTrue(e.getMessage().contains("invalid translation encoding"));
+        }
+        try {
+            // wrong start delimiter
+            TranslatableTextIf invalid = TranslatableTextIf.create("<=@#!=>\nen:new original" + TranslatableTextIf.OLD_DELIMITER);
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertTrue(e.getMessage().contains("invalid translation encoding"));
+        }
+
+        try {
+            // invalid version
+            TranslatableTextIf invalid = TranslatableTextIf.create(TranslatableTextIf.DELIMITER + "3en:new original");
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertTrue(e.getMessage().contains("invalid translation encoding"));
+        }
+        try {
+            // no start DELIMITER
+            TranslatableTextIf invalid = TranslatableTextIf.create("1en:new original");
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertTrue(e.getMessage().contains("invalid translation encoding"));
+        }
+        try {
+            // wrong start delimiter
+            TranslatableTextIf invalid = TranslatableTextIf.create("\u200A1en:new original");
+            assertNull(invalid);
+        } catch (RuntimeException e) {
+            assertTrue(e.getMessage().contains("invalid translation encoding"));
+        }
+        try {
+            // missing colon
+            TranslatableTextIf empty = TranslatableTextIf.create(TranslatableTextIf.DELIMITER + "1eng");
+            assertEquals("",empty.getText());
+        } catch (RuntimeException e) {
+            assertEquals("Error: language colon missing", e.getMessage());
+        }
+        if (TranslatableTextIf.getVersion() == 2) {
+            try {
+                // missing length
+                TranslatableTextIf invalid = TranslatableTextIf.create(TranslatableTextIf.DELIMITER + "2eng");
+                assertNull(invalid);
+            } catch (RuntimeException e) {
+                assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
+            }
+            try {
+                // wrong original language
+                TranslatableTextIf invalid = TranslatableTextIf.create(TranslatableTextIf.DELIMITER + "2e:new original");
+                assertNull(invalid);
+            } catch (RuntimeException e) {
+                assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
+            }
+            try {
+                // wrong original language
+                TranslatableTextIf invalid = TranslatableTextIf.create(TranslatableTextIf.DELIMITER + "2english:new original");
+                assertNull(invalid);
+            } catch (RuntimeException e) {
+                assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
+            }
+            try {
+                // wrong length field
+                TranslatableTextIf invalid = TranslatableTextIf.create(TranslatableTextIf.DELIMITER + "2en:€~new original");
+                assertNull(invalid);
+            } catch (RuntimeException e) {
+                assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
+            }
+            try {
+                // wrong length field
+                TranslatableTextIf invalid = TranslatableTextIf.create(TranslatableTextIf.DELIMITER + "2en:\r~new original");
+                assertNull(invalid);
+            } catch (RuntimeException e) {
+                assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
+            }
+            try {
+                // wrong length field
+                TranslatableTextIf invalid = TranslatableTextIf.create(TranslatableTextIf.DELIMITER + "2en:12~new original");
+                assertNull(invalid);
+            } catch (RuntimeException e) {
+                assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
+            }
+            try {
+                // wrong length field
+                TranslatableTextIf invalid = TranslatableTextIf.create(TranslatableTextIf.DELIMITER + "2en: ~new original");
+                invalid.normalize();
+                assertNull(invalid);
+            } catch (RuntimeException e) {
+                assertTrue("wrong exception message: " + e.getMessage(), e.getMessage().contains("Error: parsing encoded TranslatableText at 18"));
+            }
+        }
     }
 
     @Test
     public void getTranslation() {
-        TranslatableText text = new TranslatableText("text-en", "en");
+        TranslatableTextIf text = TranslatableTextIf.create("text-en", "en");
         text.setTranslation("text-de", "de");
         text.setTranslation("text-fr", "fr");
 
@@ -81,7 +170,7 @@ public class TranslatableTextTest {
 
         String encodedValue = text.getEncodedValue();
         assertNotNull(encodedValue);
-        text = new TranslatableText(encodedValue);
+        text = TranslatableTextIf.create(encodedValue);
         assertEquals("text-en", text.getText("en"));
         assertEquals("text-en", text.getText("xx"));
         assertEquals("text-de", text.getText("de"));
@@ -109,18 +198,17 @@ public class TranslatableTextTest {
 
     @Test
     public void createTranslatableTextOldDelimiter() {
-        TranslatableText text = null;
-        TranslatableText nullText = new TranslatableText(TranslatableText.OLD_DELIMITER);
-        assertTrue(TranslatableText.isNull(nullText));
+        TranslatableTextIf text = null;
+        TranslatableTextIf nullText = TranslatableTextIf.create(TranslatableTextIf.OLD_DELIMITER);
+        assertTrue(TranslatableTextIf.isNull(nullText));
         assertTrue(nullText.isEmpty());
-        assertNull(nullText.translationMap);
-        assertEquals(new TranslatableText(), nullText);
-        TranslatableText defaultConstructedText = new TranslatableText();
+        assertEquals(TranslatableTextIf.create(), nullText);
+        TranslatableTextIf defaultConstructedText = TranslatableTextIf.create();
         assertEquals(nullText, defaultConstructedText);
-        assertEquals(TranslatableText.OLD_DELIMITER, nullText.getEncodedValue());
+        assertEquals(TranslatableTextIf.OLD_DELIMITER, nullText.getEncodedValue());
 
-        text = new TranslatableText("new original", "en");
-        TranslatableText text2 = new TranslatableText(TranslatableText.OLD_DELIMITER+"en:new original"+TranslatableText.OLD_DELIMITER+"en:new original"+TranslatableText.OLD_DELIMITER);
+        text = TranslatableTextIf.create("new original", "en");
+        TranslatableTextIf text2 = TranslatableTextIf.create(TranslatableTextIf.OLD_DELIMITER+"en:new original"+ TranslatableTextIf.OLD_DELIMITER+"en:new original"+ TranslatableTextIf.OLD_DELIMITER);
         // this assertion is false, because encoded value of text3 has duplicated entries
         // assertEquals(text2, text3);
         assertEquals(text.getText(), text2.getText());
@@ -132,86 +220,83 @@ public class TranslatableTextTest {
 
     @Test
     public void createTranslatableText() {
-        TranslatableText text = null;
-        assertTrue(TranslatableText.isNull(text));
+        TranslatableTextIf text = null;
+        assertTrue(TranslatableTextIf.isNull(text));
 
-        text = new TranslatableText();
-        assertTrue(TranslatableText.isNull(text));
+        text = TranslatableTextIf.create();
+        assertTrue(TranslatableTextIf.isNull(text));
         assertTrue(text.isEmpty());
-        assertNull(text.translationMap);
 
-        text = TranslatableText.create("", "en");
-        assertFalse(TranslatableText.isNull(text));
+        text = TranslatableTextIf.create("", "en");
+        assertFalse(TranslatableTextIf.isNull(text));
         assertTrue(text.isEmpty());
         assertEquals("", text.toString());
-        assertNotNull(text.translationMap);
-        assertTrue(text.translationMap.isEmpty());
-        if (TranslatableText.getStandardWriteVersion()==1) {
-            assertEquals(TranslatableText.DELIMITER + "1en:", text.getEncodedValue());
+        assertEquals(1, text.getTranslationMap().size());
+        if (TranslatableTextIf.getVersion()==1) {
+            assertEquals(TranslatableTextIf.DELIMITER + "1en:", text.getEncodedValue());
             // DELIMITER.length=3 VERSION.length=1, so encoded length = 3 + 1 + 3 = 7
-            assertEquals(TranslatableText.DELIMITER.getBytes(StandardCharsets.UTF_8).length + 4, text.getEncodedValue().getBytes(StandardCharsets.UTF_8).length);
-        } else if (TranslatableText.getStandardWriteVersion()==2) {
-            assertEquals(TranslatableText.DELIMITER + "2en: ~", text.getEncodedValue());
+            assertEquals(TranslatableTextIf.DELIMITER.getBytes(StandardCharsets.UTF_8).length + 4, text.getEncodedValue().getBytes(StandardCharsets.UTF_8).length);
+        } else if (TranslatableTextIf.getVersion()==2) {
+            assertEquals(TranslatableTextIf.DELIMITER + "2en: ~", text.getEncodedValue());
             // DELIMITER.length=3 VERSION.length=1, so encoded length = 3 + 1 + 3 + 1 + 1= 9
-            assertEquals(TranslatableText.DELIMITER.getBytes(StandardCharsets.UTF_8).length + 6, text.getEncodedValue().getBytes(StandardCharsets.UTF_8).length);
+            assertEquals(TranslatableTextIf.DELIMITER.getBytes(StandardCharsets.UTF_8).length + 6, text.getEncodedValue().getBytes(StandardCharsets.UTF_8).length);
         }
 
         text.setTranslation("leer", "");
-        assertFalse(TranslatableText.isNull(text));
+        assertFalse(TranslatableTextIf.isNull(text));
         assertTrue(text.isEmpty());
-        assertNotNull(text.translationMap);
-        assertTrue(text.translationMap.isEmpty());
-        if (TranslatableText.getStandardWriteVersion()==1) {
-            assertEquals(TranslatableText.DELIMITER + "1en:", text.getEncodedValue());
-        } else if (TranslatableText.getStandardWriteVersion()==0) {
-            assertEquals(TranslatableText.OLD_DELIMITER + "en:"  + TranslatableText.OLD_DELIMITER, text.getEncodedValue());
+        assertEquals(1, text.getTranslationMap().size());
+        if (TranslatableTextIf.getVersion()==1) {
+            assertEquals(TranslatableTextIf.DELIMITER + "1en:", text.getEncodedValue());
+        } else if (TranslatableTextIf.getVersion()==0) {
+            assertEquals(TranslatableTextIf.OLD_DELIMITER + "en:"  + TranslatableTextIf.OLD_DELIMITER, text.getEncodedValue());
         } else {
-            assertEquals(TranslatableText.DELIMITER + "2en: ~", text.getEncodedValue());
+            assertEquals(TranslatableTextIf.DELIMITER + "2en: ~", text.getEncodedValue());
         }
 
-        TranslatableText text2 = new TranslatableText(text.getEncodedValue());
+        TranslatableTextIf text2 = TranslatableTextIf.create(text.getEncodedValue());
         assertTrue(text.equalsOriginal(text2));
         assertEquals(text, text2);
 
         text2.setTranslation("new original", "en");
         assertFalse(text2.equalsOriginal(text));
         assertEquals("new original", text2.getText());
-        if (TranslatableText.getStandardWriteVersion()==1) {
-            assertEquals(TranslatableText.DELIMITER + "1en:new original", text2.getEncodedValue());
-        } else if (TranslatableText.getStandardWriteVersion()==0) {
-            assertEquals(TranslatableText.OLD_DELIMITER + "en:new original"  + TranslatableText.OLD_DELIMITER, text2.getEncodedValue());
+        if (TranslatableTextIf.getVersion()==1) {
+            assertEquals(TranslatableTextIf.DELIMITER + "1en:new original", text2.getEncodedValue());
+        } else if (TranslatableTextIf.getVersion()==0) {
+            assertEquals(TranslatableTextIf.OLD_DELIMITER + "en:new original"  + TranslatableTextIf.OLD_DELIMITER, text2.getEncodedValue());
         } else {
-            assertEquals(TranslatableText.DELIMITER + "2en:,~new original", text2.getEncodedValue());
+            assertEquals(TranslatableTextIf.DELIMITER + "2en:,~new original", text2.getEncodedValue());
         }
-        assertNotNull(text2.translationMap);
+        assertEquals(1, text2.getTranslationMap().size());
 
-        text = new TranslatableText("original", "en");
+        text = TranslatableTextIf.create("original", "en");
         text.setTranslation("Übersetzung", "de");
-        if (TranslatableText.getStandardWriteVersion()==1) {
-            assertEquals(TranslatableText.DELIMITER + "1en:original" + TranslatableText.DELIMITER + "de:Übersetzung", text.getEncodedValue());
-        } else if (TranslatableText.getStandardWriteVersion()==0) {
-            assertEquals(TranslatableText.OLD_DELIMITER + "en:original"  + TranslatableText.OLD_DELIMITER + "de:Übersetzung" + TranslatableText.OLD_DELIMITER, text.getEncodedValue());
+        if (TranslatableTextIf.getVersion()==1) {
+            assertEquals(TranslatableTextIf.DELIMITER + "1en:original" + TranslatableTextIf.DELIMITER + "de:Übersetzung", text.getEncodedValue());
+        } else if (TranslatableTextIf.getVersion()==0) {
+            assertEquals(TranslatableTextIf.OLD_DELIMITER + "en:original"  + TranslatableTextIf.OLD_DELIMITER + "de:Übersetzung" + TranslatableTextIf.OLD_DELIMITER, text.getEncodedValue());
         } else {
-            assertEquals(TranslatableText.DELIMITER + "2en:(~originalde:+~Übersetzung", text.getEncodedValue());
+            assertEquals(TranslatableTextIf.DELIMITER + "2en:(~originalde:+~Übersetzung", text.getEncodedValue());
         }
-        text2 = new TranslatableText(text.getEncodedValue());
+        text2 = TranslatableTextIf.create(text.getEncodedValue());
         assertEquals(text, text2);
         text2.setTranslation("Übersetzung", "de");
         assertEquals(text, text2);
         text2.setTranslation("traduction", "fr");
-        if (TranslatableText.getStandardWriteVersion()==1) {
-            assertEquals(TranslatableText.DELIMITER + "1en:original" + TranslatableText.DELIMITER + "de:Übersetzung" + TranslatableText.DELIMITER + "fr:traduction", text2.getEncodedValue());
-        } else if (TranslatableText.getStandardWriteVersion()==0) {
-            assertEquals(TranslatableText.OLD_DELIMITER + "en:original"  + TranslatableText.OLD_DELIMITER + "de:Übersetzung" + TranslatableText.OLD_DELIMITER + "fr:traduction" + TranslatableText.OLD_DELIMITER, text2.getEncodedValue());
+        if (TranslatableTextIf.getVersion()==1) {
+            assertEquals(TranslatableTextIf.DELIMITER + "1en:original" + TranslatableTextIf.DELIMITER + "de:Übersetzung" + TranslatableTextIf.DELIMITER + "fr:traduction", text2.getEncodedValue());
+        } else if (TranslatableTextIf.getVersion()==0) {
+            assertEquals(TranslatableTextIf.OLD_DELIMITER + "en:original"  + TranslatableTextIf.OLD_DELIMITER + "de:Übersetzung" + TranslatableTextIf.OLD_DELIMITER + "fr:traduction" + TranslatableTextIf.OLD_DELIMITER, text2.getEncodedValue());
         } else {
-            assertEquals(TranslatableText.DELIMITER + "2en:(~originalde:+~Übersetzungfr:*~traduction", text2.getEncodedValue());
+            assertEquals(TranslatableTextIf.DELIMITER + "2en:(~originalde:+~Übersetzungfr:*~traduction", text2.getEncodedValue());
         }
 
-        TranslatableText t = new TranslatableText(text2.getEncodedValue());
+        TranslatableTextIf t = TranslatableTextIf.create(text2.getEncodedValue());
         assertEquals("traduction", t.getText("fr"));
 
         // create with different translation sequence
-        TranslatableText text3 = new TranslatableText(TranslatableText.OLD_DELIMITER + "en:original" + TranslatableText.OLD_DELIMITER + "fr:traduction" + TranslatableText.OLD_DELIMITER + "de:Übersetzung" + TranslatableText.OLD_DELIMITER);
+        TranslatableTextIf text3 = TranslatableTextIf.create(TranslatableTextIf.OLD_DELIMITER + "en:original" + TranslatableTextIf.OLD_DELIMITER + "fr:traduction" + TranslatableTextIf.OLD_DELIMITER + "de:Übersetzung" + TranslatableTextIf.OLD_DELIMITER);
         // this assertion is false, because encoded value of text3 has different sequence of languages
         // assertEquals(text2, text3);
         text3.normalize();
@@ -221,7 +306,7 @@ public class TranslatableTextTest {
     @Test
     public void setTranslation() {
         // Translatable text without translation
-        TranslatableText text = TranslatableText.create("original", "en");
+        TranslatableTextIf text = TranslatableTextIf.create("original", "en");
         assertNull(text.translationLookup(""));
         assertNull(text.translationLookup("xx"));
         assertEquals("original", text.getText());
@@ -230,7 +315,7 @@ public class TranslatableTextTest {
         assertEquals("original", text.translationLookup("en"));
         assertEquals("en", text.getOriginalLanguage());
         assertFalse(text.isEmpty());
-        assertFalse(TranslatableText.isNull(text));
+        assertFalse(TranslatableTextIf.isNull(text));
         assertNull(text.getTranslation("de"));
         assertEquals("", text.getTranslation(List.of()));
         assertEquals("original", text.getTranslation(List.of("de", "en")));
@@ -240,8 +325,7 @@ public class TranslatableTextTest {
         text.setTranslation("new text", "en");
         assertEquals("new text", text.getTranslation("en"));
         assertEquals("new text", text.getText());
-        assert(text.translationMap == null || text.translationMap.isEmpty());
-        assertEquals(0, text.getTranslationMap().size());
+        assertEquals(1, text.getTranslationMap().size());
         assertEquals("new text", text.getText("de"));
         assertNull(text.getTranslation("de"));
 
@@ -253,7 +337,7 @@ public class TranslatableTextTest {
         assertEquals("new text", text.getTranslation(List.of("fr", "en")));
 
         // set translation with incorrect iso
-        text = TranslatableText.create("original", "en");
+        text = TranslatableTextIf.create("original", "en");
         text.setTranslation("deutsch", "deutsch");
         assertNull(text.getTranslation("deutsch"));
         assertEquals("original", text.getTranslation(List.of("deutsch", "en")));
@@ -264,7 +348,7 @@ public class TranslatableTextTest {
     public void testIso3Language() {
         // ISO3: deu=deutsch, eng=englisch, fra=französisch, zho=chinese, cmn=mandarin,
         // Translatable text without translation
-        TranslatableText text = TranslatableText.create("original", "eng");
+        TranslatableTextIf text = TranslatableTextIf.create("original", "eng");
 
         assertEquals("eng", text.getOriginalLanguage());
         assertEquals("eng", text.getLanguages().getFirst());
@@ -274,7 +358,7 @@ public class TranslatableTextTest {
         assertEquals("eng", text.getOriginalLanguage());
 
         assertFalse(text.isEmpty());
-        assertFalse(TranslatableText.isNull(text));
+        assertFalse(TranslatableTextIf.isNull(text));
         assertNull(text.getTranslation("deu"));
         assertEquals("original", text.getTranslation(List.of("deu", "eng")));
         assertEquals("original", text.getText("deu"));
@@ -285,26 +369,26 @@ public class TranslatableTextTest {
         assertEquals("original", text.getText());
         assertEquals("deutsch", text.getText("deu"));
 
-        TranslatableText text2 = new TranslatableText(text.getEncodedValue());
+        TranslatableTextIf text2 = TranslatableTextIf.create(text.getEncodedValue());
         assertEquals("eng", text2.getOriginalLanguage());
         assertEquals("eng", text2.getLanguages().getFirst());
         assertEquals("original", text2.getText());
         assertEquals("deutsch", text2.getText("deu"));
 
-        String oldEncoded = TranslatableText.OLD_DELIMITER+"engoriginal"+TranslatableText.OLD_DELIMITER+"deuOriginal"+TranslatableText.OLD_DELIMITER+"fraoriginale"+TranslatableText.OLD_DELIMITER+"rusоригинал"+TranslatableText.OLD_DELIMITER;
-        text = new TranslatableText(oldEncoded);
+        String oldEncoded = TranslatableTextIf.OLD_DELIMITER+"engoriginal"+ TranslatableTextIf.OLD_DELIMITER+"deuOriginal"+ TranslatableTextIf.OLD_DELIMITER+"fraoriginale"+ TranslatableTextIf.OLD_DELIMITER+"rusоригинал"+ TranslatableTextIf.OLD_DELIMITER;
+        text = TranslatableTextIf.create(oldEncoded);
         assertEquals("original", text.getText("eng"));
         assertEquals("Original", text.getText("deu"));
         assertEquals("none", text.getText("en", "none"));
         text.normalize();
-        text = new TranslatableText(text.getEncodedValue());
+        text = TranslatableTextIf.create(text.getEncodedValue());
         assertEquals(4, text.getLanguages().size());
         assertEquals("original", text.getText("eng"));
         assertEquals("originale", text.getText("fra"));
 
 
-        String encoded = TranslatableText.DELIMITER+"1engoriginal"+TranslatableText.DELIMITER+"deuOriginal"+TranslatableText.DELIMITER+"fraoriginale"+TranslatableText.DELIMITER+"rusоригинал";
-        text = new TranslatableText(encoded);
+        String encoded = TranslatableTextIf.DELIMITER+"1engoriginal"+ TranslatableTextIf.DELIMITER+"deuOriginal"+ TranslatableTextIf.DELIMITER+"fraoriginale"+ TranslatableTextIf.DELIMITER+"rusоригинал";
+        text = TranslatableTextIf.create(encoded);
         assertEquals("original", text.getText("eng"));
         assertEquals("Original", text.getText("deu"));
         assertEquals("none", text.getText("en", "none"));
@@ -312,24 +396,24 @@ public class TranslatableTextTest {
 
     @Test
     public void testIsTranslatableText() {
-        assertTrue(TranslatableText.isTranslatableText(null));
+        assertTrue(TranslatableTextIf.isTranslatableText(null));
         // @todo: this is changed from old behaviour:
-        assertTrue(TranslatableText.isTranslatableText(""));
+        assertTrue(TranslatableTextIf.isTranslatableText(""));
         // @todo: is this really a translatable text?
-        assertTrue(TranslatableText.isTranslatableText(TranslatableText.OLD_DELIMITER));
-        assertTrue(TranslatableText.isTranslatableText(TranslatableText.OLD_DELIMITER+TranslatableText.OLD_DELIMITER));
+        assertTrue(TranslatableTextIf.isTranslatableText(TranslatableTextIf.OLD_DELIMITER));
+        assertTrue(TranslatableTextIf.isTranslatableText(TranslatableTextIf.OLD_DELIMITER+ TranslatableTextIf.OLD_DELIMITER));
 
-        String encodedValue = TranslatableText.create(null, "de").getEncodedValue();
-        assertTrue(TranslatableText.isTranslatableText(encodedValue));
-        assertFalse(TranslatableText.isTranslatableText("a normal string"));
-        assertFalse(TranslatableText.isTranslatableText(TranslatableText.DELIMITER));
+        String encodedValue = TranslatableTextIf.create(null, "de").getEncodedValue();
+        assertTrue(TranslatableTextIf.isTranslatableText(encodedValue));
+        assertFalse(TranslatableTextIf.isTranslatableText("a normal string"));
+        assertFalse(TranslatableTextIf.isTranslatableText(TranslatableTextIf.DELIMITER));
     }
 
     @Test
     public void translationLookup() {
         // languages: en,de,fr,ru
-        String encoded = TranslatableText.OLD_DELIMITER+"en:original"+TranslatableText.OLD_DELIMITER+"de:Original"+TranslatableText.OLD_DELIMITER+"fr:originale"+TranslatableText.OLD_DELIMITER+"ru:оригинал"+TranslatableText.OLD_DELIMITER;
-        TranslatableText text = new TranslatableText(encoded);
+        String encoded = TranslatableTextIf.OLD_DELIMITER+"en:original"+ TranslatableTextIf.OLD_DELIMITER+"de:Original"+ TranslatableTextIf.OLD_DELIMITER+"fr:originale"+ TranslatableTextIf.OLD_DELIMITER+"ru:оригинал"+ TranslatableTextIf.OLD_DELIMITER;
+        TranslatableTextIf text = TranslatableTextIf.create(encoded);
         assertEquals("original", text.getText());
         assertEquals("originale", text.translationLookup("fr"));
         // @todo: the language translations are lost
@@ -339,42 +423,45 @@ public class TranslatableTextTest {
 
     @Test
     public void testOverwriteOriginalTranslation() {
-        String encodedValueWithTranslation = TranslatableText.OLD_DELIMITER+"en:text-en"+TranslatableText.OLD_DELIMITER+"de:text-de"+TranslatableText.OLD_DELIMITER;
-        TranslatableText text = new TranslatableText(encodedValueWithTranslation);
+        String encodedValueWithTranslation = TranslatableTextIf.OLD_DELIMITER+"en:text-en"+ TranslatableTextIf.OLD_DELIMITER+"de:text-de"+ TranslatableTextIf.OLD_DELIMITER;
+        TranslatableTextIf text = TranslatableTextIf.create(encodedValueWithTranslation);
         assertEquals("en", text.getOriginalLanguage());
         assertEquals("text-en", text.getText());
         assertEquals("text-de", text.getText("de"));
         text.setTranslation("new-en", "en");
         assertEquals("new-en", text.getText());
         assertEquals("text-de", text.getText("de"));
-        if (TranslatableText.getStandardWriteVersion()==0) {
-            assertEquals(TranslatableText.OLD_DELIMITER + "en:new-en"+ TranslatableText.OLD_DELIMITER +"de:text-de" + TranslatableText.OLD_DELIMITER, text.getEncodedValue());
-        } else if (TranslatableText.getStandardWriteVersion()==1) {
-            assertEquals(TranslatableText.DELIMITER + "1en:new-en"+ TranslatableText.DELIMITER +"de:text-de", text.getEncodedValue());
-        } else if (TranslatableText.getStandardWriteVersion()==2) {
-            assertEquals(TranslatableText.DELIMITER + "2en:&~new-ende:'~text-de", text.getEncodedValue());
+        if (TranslatableTextIf.getVersion()==0) {
+            assertEquals(TranslatableTextIf.OLD_DELIMITER + "en:new-en"+ TranslatableTextIf.OLD_DELIMITER +"de:text-de" + TranslatableTextIf.OLD_DELIMITER, text.getEncodedValue());
+        } else if (TranslatableTextIf.getVersion()==1) {
+            assertEquals(TranslatableTextIf.DELIMITER + "1en:new-en"+ TranslatableTextIf.DELIMITER +"de:text-de", text.getEncodedValue());
+        } else if (TranslatableTextIf.getVersion()==2) {
+            assertEquals(TranslatableTextIf.DELIMITER + "2en:&~new-ende:'~text-de", text.getEncodedValue());
         }
     }
 
     @Test
     public void createWithOldEncodedValue() {
         String encodedValueNull = null;
-        TranslatableText text = new TranslatableText(encodedValueNull);
+        TranslatableTextIf text = TranslatableTextIf.create(encodedValueNull);
         assertNotNull(text);
-        assertTrue(TranslatableText.isNull(text));
+        assertTrue(TranslatableTextIf.isNull(text));
         assertNull(text.getEncodedValue());
         assertNull(text.getText());
         assertNull(text.getTranslation("en"));
 
-        text = new TranslatableText(TranslatableText.OLD_DELIMITER);
-        assertEquals(TranslatableText.OLD_DELIMITER, text.getEncodedValue());
+        text = TranslatableTextIf.create(TranslatableTextIf.OLD_DELIMITER);
+        assertEquals(TranslatableTextIf.OLD_DELIMITER, text.getEncodedValue());
         assertNull(text.getText());
         assertNull(text.getTranslation("en"));
 
-        String encodedValueWithTranslation = TranslatableText.OLD_DELIMITER+"en:text-en"+TranslatableText.OLD_DELIMITER+"de:text-de"+TranslatableText.OLD_DELIMITER;
-        text = new TranslatableText(encodedValueWithTranslation);
+        String encodedValueWithTranslation = TranslatableTextIf.OLD_DELIMITER+"en:text-en"+ TranslatableTextIf.OLD_DELIMITER+"de:text-de"+ TranslatableTextIf.OLD_DELIMITER;
+        text = TranslatableTextIf.create(encodedValueWithTranslation);
         assertFalse(text.isTranslation(Set.of("en")));
         assertTrue(text.isTranslation(Set.of("de")));
+        if (TranslatableTextIf.getVersion()==0) {
+            encodedValueWithTranslation += "en:text-en"+ TranslatableTextIf.OLD_DELIMITER;
+        }
         assertEquals(encodedValueWithTranslation, text.getEncodedValue());
         assertEquals("text-en", text.getTranslation("en"));
         // test side effects of getTranslation
@@ -387,8 +474,8 @@ public class TranslatableTextTest {
         assertEquals(encodedValueWithTranslation, text.getEncodedValue());
 
         // inconsistent encodedValue (with original language duplicated as translation with different value
-        String encodedValueWithDuplicateLanguage = TranslatableText.OLD_DELIMITER+"en:text-en"+TranslatableText.OLD_DELIMITER+"en:text-en"+TranslatableText.OLD_DELIMITER+"de:text-de"+TranslatableText.OLD_DELIMITER;
-        text = new TranslatableText(encodedValueWithDuplicateLanguage);
+        String encodedValueWithDuplicateLanguage = TranslatableTextIf.OLD_DELIMITER+"en:text-en"+ TranslatableTextIf.OLD_DELIMITER+"en:text-en"+ TranslatableTextIf.OLD_DELIMITER+"de:text-de"+ TranslatableTextIf.OLD_DELIMITER;
+        text = TranslatableTextIf.create(encodedValueWithDuplicateLanguage);
         assertFalse(text.isTranslation(Set.of("en")));
         assertEquals(encodedValueWithDuplicateLanguage, text.getEncodedValue());
         assertEquals("text-en", text.getTranslation("en"));
@@ -401,11 +488,11 @@ public class TranslatableTextTest {
         // test side effects of getText with language
         assertEquals(encodedValueWithDuplicateLanguage, text.getEncodedValue());
         // @todo: this will be false, because the encodedValue of text duplicates the original language
-        //assertEquals(text, TranslatableText.create("text-en", "en").setTranslation("text-de", "de"));
+        //assertEquals(text, TranslatableTextIf.create("text-en", "en").setTranslation("text-de", "de"));
 
         // inconsistent encodedValue (with original language duplicated as translation with different value
-        String inconsistentEncodedValue = TranslatableText.OLD_DELIMITER+"en:text-en"+TranslatableText.OLD_DELIMITER+"en:text-en2"+TranslatableText.OLD_DELIMITER;
-        text = new TranslatableText(inconsistentEncodedValue);
+        String inconsistentEncodedValue = TranslatableTextIf.OLD_DELIMITER+"en:text-en"+ TranslatableTextIf.OLD_DELIMITER+"en:text-en2"+ TranslatableTextIf.OLD_DELIMITER;
+        text = TranslatableTextIf.create(inconsistentEncodedValue);
         assertEquals(inconsistentEncodedValue, text.getEncodedValue());
         assertEquals("text-en", text.getTranslation("en"));
         // test side effects of getTranslation
@@ -417,94 +504,76 @@ public class TranslatableTextTest {
         // test side effects of getText with language
         assertEquals(inconsistentEncodedValue, text.getEncodedValue());
 
-        try {
-            // does not end with DELIMITER
-            TranslatableText invalid = new TranslatableText(TranslatableText.OLD_DELIMITER + "en:new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("invalid translation encoding"));
-        }
-        try {
-            // does not start with DELIMITER
-            TranslatableText invalid = new TranslatableText("en:new original" + TranslatableText.OLD_DELIMITER);
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("invalid translation encoding"));
-        }
-        try {
-            // wrong start delimiter
-            TranslatableText invalid = new TranslatableText("<=@#!=>\nen:new original" + TranslatableText.OLD_DELIMITER);
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("invalid translation encoding"));
-        }
     }
 
     @Test
     public void createWithEncodedValue() {
         String encodedValueNull = null;
-        TranslatableText text = new TranslatableText(encodedValueNull);
+        TranslatableTextIf text = TranslatableTextIf.create(encodedValueNull);
         assertNotNull(text);
-        assertTrue(TranslatableText.isNull(text));
+        assertTrue(TranslatableTextIf.isNull(text));
         assertNull(text.getEncodedValue());
         assertNull(text.getText());
         assertNull(text.getTranslation("en"));
 
-        text = new TranslatableText(TranslatableText.DELIMITER+"1");
+        text = TranslatableTextIf.create(TranslatableTextIf.DELIMITER+"1");
         assertNull(text.getText());
         assertNull(text.getTranslation("en"));
-        assertTrue(TranslatableText.isNull(text));
+        assertTrue(TranslatableTextIf.isNull(text));
         assertTrue(text.isEmpty());
-        assertNull(text.translationMap);
-        assertEquals(new TranslatableText(), text);
-        assertEquals(text, new TranslatableText());
-        assertEquals(TranslatableText.DELIMITER+"1", text.getEncodedValue());
+        assertEquals(TranslatableTextIf.create(), text);
+        assertEquals(text, TranslatableTextIf.create());
+        assertEquals(TranslatableTextIf.DELIMITER+"1", text.getEncodedValue());
 
-        String encodedValueSingleLanguage = TranslatableText.DELIMITER+"2en:)~example 1";
-        text = new TranslatableText(encodedValueSingleLanguage);
-        assertEquals("example 1", text.getText());
+        if (TranslatableTextIf.getVersion() == 2) {
+            String encodedValueSingleLanguage = TranslatableTextIf.DELIMITER + "2en:)~example 1";
+            text = TranslatableTextIf.create(encodedValueSingleLanguage);
+            assertEquals("example 1", text.getText());
 
-        String encodedValueDuplicatedLanguage = TranslatableText.DELIMITER+"2en:)~example 1en:)~example 1fr:)~example f";
-        text = new TranslatableText(encodedValueDuplicatedLanguage);
-        assertEquals("example 1", text.getText());
-        assertTrue("fr", text.contains("fr"));
+            String encodedValueDuplicatedLanguage = TranslatableTextIf.DELIMITER+"2en:)~example 1en:)~example 1fr:)~example f";
+            text = TranslatableTextIf.create(encodedValueDuplicatedLanguage);
+            assertEquals("example 1", text.getText());
+            assertTrue("fr", text.contains("fr"));
+        }
 
-        String encodedValueWithTranslation = TranslatableText.DELIMITER+"1en:text-en"+TranslatableText.DELIMITER+"de:text-de";
-        text = new TranslatableText(encodedValueWithTranslation);
-        assertFalse(text.isTranslation(Set.of("en")));
-        assertTrue(text.isTranslation(Set.of("de")));
-        assertEquals(encodedValueWithTranslation, text.getEncodedValue());
-        assertEquals("text-en", text.getTranslation("en"));
-        // test side effects of getTranslation
-        assertEquals(encodedValueWithTranslation, text.getEncodedValue());
-        assertEquals("text-en", text.getText());
-        // test side effects of getText
-        assertEquals(encodedValueWithTranslation, text.getEncodedValue());
-        assertEquals("text-de", text.getText("de"));
-        // test side effects of getText with language
-        assertEquals(encodedValueWithTranslation, text.getEncodedValue());
+        if (TranslatableTextIf.getVersion() > 0) {
+            String encodedValueWithTranslation = TranslatableTextIf.DELIMITER + "1en:text-en" + TranslatableTextIf.DELIMITER + "de:text-de";
+            text = TranslatableTextIf.create(encodedValueWithTranslation);
+            assertFalse(text.isTranslation(Set.of("en")));
+            assertTrue(text.isTranslation(Set.of("de")));
+            assertEquals(encodedValueWithTranslation, text.getEncodedValue());
+            assertEquals("text-en", text.getTranslation("en"));
+            // test side effects of getTranslation
+            assertEquals(encodedValueWithTranslation, text.getEncodedValue());
+            assertEquals("text-en", text.getText());
+            // test side effects of getText
+            assertEquals(encodedValueWithTranslation, text.getEncodedValue());
+            assertEquals("text-de", text.getText("de"));
+            // test side effects of getText with language
+            assertEquals(encodedValueWithTranslation, text.getEncodedValue());
+
+            // inconsistent encodedValue (with original language duplicated as translation with different value
+            String encodedValueWithDuplicateLanguage = TranslatableTextIf.DELIMITER+"1en:text-en"+ TranslatableTextIf.DELIMITER+"en:text-en"+ TranslatableTextIf.DELIMITER+"de:text-de"+ TranslatableTextIf.DELIMITER;
+            text = TranslatableTextIf.create(encodedValueWithDuplicateLanguage);
+            assertFalse(text.isTranslation(Set.of("en")));
+            assertTrue(text.isTranslation(Set.of("de")));
+            assertEquals(encodedValueWithDuplicateLanguage, text.getEncodedValue());
+            assertEquals("text-en", text.getTranslation("en"));
+            // test side effects of getTranslation
+            assertEquals(encodedValueWithDuplicateLanguage, text.getEncodedValue());
+            assertEquals("text-en", text.getText());
+            // test side effects of getText
+            assertEquals(encodedValueWithDuplicateLanguage, text.getEncodedValue());
+            assertEquals("text-de", text.getText("de"));
+            // test side effects of getText with language
+            assertEquals(encodedValueWithDuplicateLanguage, text.getEncodedValue());
+            // @todo: this will be false, because the encodedValue of text duplicates the original language
+            //assertEquals(text, TranslatableTextIf.create("text-en", "en").setTranslation("text-de", "de"));
+        }
 
         // inconsistent encodedValue (with original language duplicated as translation with different value
-        String encodedValueWithDuplicateLanguage = TranslatableText.DELIMITER+"1en:text-en"+TranslatableText.DELIMITER+"en:text-en"+TranslatableText.DELIMITER+"de:text-de"+TranslatableText.DELIMITER;
-        text = new TranslatableText(encodedValueWithDuplicateLanguage);
-        assertFalse(text.isTranslation(Set.of("en")));
-        assertTrue(text.isTranslation(Set.of("de")));
-        assertEquals(encodedValueWithDuplicateLanguage, text.getEncodedValue());
-        assertEquals("text-en", text.getTranslation("en"));
-        // test side effects of getTranslation
-        assertEquals(encodedValueWithDuplicateLanguage, text.getEncodedValue());
-        assertEquals("text-en", text.getText());
-        // test side effects of getText
-        assertEquals(encodedValueWithDuplicateLanguage, text.getEncodedValue());
-        assertEquals("text-de", text.getText("de"));
-        // test side effects of getText with language
-        assertEquals(encodedValueWithDuplicateLanguage, text.getEncodedValue());
-        // @todo: this will be false, because the encodedValue of text duplicates the original language
-        //assertEquals(text, TranslatableText.create("text-en", "en").setTranslation("text-de", "de"));
-
-        // inconsistent encodedValue (with original language duplicated as translation with different value
-        String inconsistentEncodedValue = TranslatableText.OLD_DELIMITER+"en:text-en"+TranslatableText.OLD_DELIMITER+"en:text-en2"+TranslatableText.OLD_DELIMITER;
-        text = new TranslatableText(inconsistentEncodedValue);
+        String inconsistentEncodedValue = TranslatableTextIf.OLD_DELIMITER+"en:text-en"+ TranslatableTextIf.OLD_DELIMITER+"en:text-en2"+ TranslatableTextIf.OLD_DELIMITER;
+        text = TranslatableTextIf.create(inconsistentEncodedValue);
         assertEquals(inconsistentEncodedValue, text.getEncodedValue());
         assertEquals("text-en", text.getTranslation("en"));
         // test side effects of getTranslation
@@ -515,183 +584,76 @@ public class TranslatableTextTest {
         assertEquals("text-en", text.getText("de"));
         // test side effects of getText with language
         assertEquals(inconsistentEncodedValue, text.getEncodedValue());
-
-        try {
-            // invalid version
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "3en:new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("invalid translation encoding"));
-        }
-        try {
-            // no start DELIMITER
-            TranslatableText invalid = new TranslatableText("1en:new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("invalid translation encoding"));
-        }
-        try {
-            // wrong start delimiter
-            TranslatableText invalid = new TranslatableText("\u200A1en:new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertTrue(e.getMessage().contains("invalid translation encoding"));
-        }
-//        try {
-//            // no original language
-//            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "1new original");
-//            assertNull(invalid);
-//        } catch (RuntimeException e) {
-//            assertEquals("Error: language colon missing", e.getMessage());
-//        }
-//        try {
-//            // no original language
-//            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2new original");
-//            assertNull(invalid);
-//        } catch (RuntimeException e) {
-//            assertEquals("Error: language colon missing", e.getMessage());
-//        }
-        try {
-            // missing colon
-            TranslatableText empty = new TranslatableText(TranslatableText.DELIMITER + "1eng");
-            assertEquals("",empty.getText());
-        } catch (RuntimeException e) {
-            assertEquals("Error: language colon missing", e.getMessage());
-        }
-        try {
-            // missing length
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2eng");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
-        }
-//        try {
-//            // short original language
-//            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "1e:new original");
-//            assertNull(invalid);
-//        } catch (RuntimeException e) {
-//            assertEquals("Error: language colon missing", e.getMessage());
-//        }
-        try {
-            // wrong original language
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2e:new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
-        }
-//        try {
-//            // wrong original language
-//            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "1english:new original");
-//            assertNull(invalid);
-//        } catch (RuntimeException e) {
-//            assertEquals("Error: language colon missing", e.getMessage());
-//        }
-        try {
-            // wrong original language
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2english:new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
-        }
-        try {
-            // wrong length field
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2en:€~new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
-        }
-        try {
-            // wrong length field
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2en:\r~new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
-        }
-        try {
-            // wrong length field
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2en:12~new original");
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertEquals("Error: parsing encoded TranslatableText at 13", e.getMessage());
-        }
-        try {
-            // wrong length field
-            TranslatableText invalid = new TranslatableText(TranslatableText.DELIMITER + "2en: ~new original");
-            invalid.normalize();
-            assertNull(invalid);
-        } catch (RuntimeException e) {
-            assertTrue("wrong exception message: " + e.getMessage(), e.getMessage().contains("Error: parsing encoded TranslatableText at 18"));
-        }
     }
 
     @Test
     public void getEncodedValue() {
-        TranslatableText text = TranslatableText.create("original", "en");
+        TranslatableTextIf text = TranslatableTextIf.create("original", "en");
         // @todo: do we need a translation map here?
         assertNotNull(text.getTranslationMap());
         // @todo: here we have duplicated text
-        String encodedValueSingle = switch (TranslatableText.getStandardWriteVersion()) {
-            case 0 -> TranslatableText.OLD_DELIMITER + "en:original" + TranslatableText.OLD_DELIMITER;
-            case 1 -> TranslatableText.DELIMITER + "1en:original";
-            case 2 -> TranslatableText.DELIMITER + "2en:(~original";
+        String encodedValueSingle = switch (TranslatableTextIf.getVersion.get()) {
+            case 0 -> TranslatableTextIf.OLD_DELIMITER + "en:original" + TranslatableTextIf.OLD_DELIMITER;
+            case 1 -> TranslatableTextIf.DELIMITER + "1en:original";
+            case 2 -> TranslatableTextIf.DELIMITER + "2en:(~original";
             default -> "";
         };
         assertEquals(encodedValueSingle, text.getEncodedValue());
         assertNotNull(text.getTranslationMap());
-        assertEquals(0, text.getTranslationMap().size());
+        assertEquals(1, text.getTranslationMap().size());
 
-        text = new TranslatableText(encodedValueSingle);
-        assertTrue(text.getTranslationMap().isEmpty());
+        text = TranslatableTextIf.create(encodedValueSingle);
+        assertEquals(1, text.getTranslationMap().size());
         assertEquals("en", text.getOriginalLanguage());
         assertEquals("original", text.getText());
         text.setTranslation("translation", "de");
 
-        text = new TranslatableText(encodedValueSingle);
-        assertTrue(text.getTranslationMap().isEmpty());
+        text = TranslatableTextIf.create(encodedValueSingle);
+        assertEquals(1, text.getTranslationMap().size());
         assertEquals("en", text.getOriginalLanguage());
         assertEquals("original", text.getText());
         assertEquals(encodedValueSingle, text.getEncodedValue());
         text.setTranslation("translation", "de");
-        String encodedWithTranslation = encodedValueSingle + switch (TranslatableText.getStandardWriteVersion()) {
-            case 0 -> "de:translation"+TranslatableText.OLD_DELIMITER;
-            case 1 -> TranslatableText.DELIMITER+"de:translation";
+        String encodedWithTranslation = encodedValueSingle + switch (TranslatableTextIf.getVersion.get()) {
+            case 0 -> "de:translation"+ TranslatableTextIf.OLD_DELIMITER;
+            case 1 -> TranslatableTextIf.DELIMITER+"de:translation";
             case 2 -> "de:+~translation";
             default -> "";
         };
         assertEquals(encodedWithTranslation, text.getEncodedValue());
 
-        String currentEncodedValueSingleDelimiterAtEnd = encodedValueSingle + (TranslatableText.getStandardWriteVersion()<1 ? TranslatableText.OLD_DELIMITER : "");
-        text = new TranslatableText(currentEncodedValueSingleDelimiterAtEnd);
-        assertTrue(text.getTranslationMap().isEmpty());
+        String currentEncodedValueSingleDelimiterAtEnd = encodedValueSingle + (TranslatableTextIf.getVersion()<1 ? TranslatableTextIf.OLD_DELIMITER : "");
+        text = TranslatableTextIf.create(currentEncodedValueSingleDelimiterAtEnd);
+        assertEquals(1, text.getTranslationMap().size());
         assertEquals("en", text.getOriginalLanguage());
         assertEquals("original", text.getText());
         text.normalize();
         assertEquals(encodedValueSingle, text.getEncodedValue());
 
-        String oldEncodedValueSingle = TranslatableText.OLD_DELIMITER+"en:original"+TranslatableText.OLD_DELIMITER;
-        text = new TranslatableText(oldEncodedValueSingle);
-        assertTrue(text.getTranslationMap().isEmpty());
+        String oldEncodedValueSingle = TranslatableTextIf.OLD_DELIMITER+"en:original"+ TranslatableTextIf.OLD_DELIMITER;
+        text = TranslatableTextIf.create(oldEncodedValueSingle);
+        assertEquals(1, text.getTranslationMap().size());
         assertEquals("en", text.getOriginalLanguage());
         assertEquals("original", text.getText());
         text.setTranslation("translation", "de");
 
-        String newEncodedValueDuplicate = TranslatableText.DELIMITER+"1en:original"+TranslatableText.DELIMITER+"en:original";
-        text = new TranslatableText(newEncodedValueDuplicate);
-        assertTrue(text.getTranslationMap().isEmpty());
+        String newEncodedValueDuplicate = TranslatableTextIf.DELIMITER+"1en:original"+ TranslatableTextIf.DELIMITER+"en:original";
+        text = TranslatableTextIf.create(newEncodedValueDuplicate);
+        assertEquals(1, text.getTranslationMap().size());
         assertEquals("en", text.getOriginalLanguage());
         assertEquals("original", text.getText());
         text.setTranslation("translation", "de");
         assertEquals(encodedWithTranslation, text.getEncodedValue());
 
-        String oldEncodedValueDuplicate = TranslatableText.OLD_DELIMITER+"en:original"+TranslatableText.OLD_DELIMITER+"en:original"+TranslatableText.OLD_DELIMITER;
-        text = new TranslatableText(oldEncodedValueDuplicate);
-        assertTrue(text.getTranslationMap().isEmpty());
+        String oldEncodedValueDuplicate = TranslatableTextIf.OLD_DELIMITER+"en:original"+ TranslatableTextIf.OLD_DELIMITER+"en:original"+ TranslatableTextIf.OLD_DELIMITER;
+        text = TranslatableTextIf.create(oldEncodedValueDuplicate);
+        assertEquals(1, text.getTranslationMap().size());
         assertEquals("en", text.getOriginalLanguage());
         assertEquals("original", text.getText());
         text.setTranslation("translation", "de");
 
         String encodedValueWithTranslation = text.getEncodedValue();
-        TranslatableText text2 = new TranslatableText(encodedValueWithTranslation);
+        TranslatableTextIf text2 = TranslatableTextIf.create(encodedValueWithTranslation);
         assertEquals(encodedValueWithTranslation, text2.getEncodedValue());
         assertEquals("original", text2.getTranslation("en"));
         assertEquals(encodedValueWithTranslation, text2.getEncodedValue());
@@ -704,10 +666,10 @@ public class TranslatableTextTest {
 
     @Test
     public void testEquals() {
-        TranslatableText text1 = TranslatableText.create("text", "en");
-        TranslatableText text2 = TranslatableText.create("text", "en");
+        TranslatableTextIf text1 = TranslatableTextIf.create("text", "en");
+        TranslatableTextIf text2 = TranslatableTextIf.create("text", "en");
         assertEquals(text1, text2);
-        Set<TranslatableText> textMap = new HashSet<>();
+        Set<TranslatableTextIf> textMap = new HashSet<>();
         textMap.add(text1);
         textMap.add(text2);
         assertEquals(1, textMap.size());
@@ -735,7 +697,7 @@ public class TranslatableTextTest {
 
     }
 
-    public void measureEncodeDecode(String prefix, Function<TranslatableText, String> encode, String... languages) throws IOException {
+    public void measureEncodeDecode(String prefix, String... languages) throws IOException {
         int loops = 10;
         int size = 1_000_000;
         long fullTimeEncode = 0;
@@ -752,11 +714,11 @@ public class TranslatableTextTest {
             long startTime = System.currentTimeMillis();
             List<String> encodedList = new ArrayList<>();
             for (int i = 0; i < size; i++) {
-                TranslatableText translatableText = new TranslatableText("text" + i, "de");
+                TranslatableTextIf translatableText = TranslatableTextIf.create("text" + i, "de");
                 for (String language : languages) {
                     translatableText.setTranslation("text-" + language + i, language);
                 }
-                String encoded = encode.apply(translatableText);
+                String encoded = translatableText.getEncodedValue();
                 encodedList.add(encoded);
             }
             long encodeDuration = System.currentTimeMillis() - startTime;
@@ -764,7 +726,7 @@ public class TranslatableTextTest {
             startTime = System.currentTimeMillis();
             for (int i = 0; i < size; i++) {
                 String value = encodedList.get(i);
-                TranslatableText translatableText = new TranslatableText(value);
+                TranslatableTextIf translatableText = TranslatableTextIf.create(value);
                 for (String language :  languages) {
                     assertEquals("text-" + language + i, translatableText.getText(language));
                 }
@@ -775,9 +737,9 @@ public class TranslatableTextTest {
             startTime = System.currentTimeMillis();
             for (int i = 0; i < size; i++) {
                 String value = encodedList.get(i);
-                TranslatableText translatableText = new TranslatableText(value);
+                TranslatableTextIf translatableText = TranslatableTextIf.create(value);
                 Map<String, String> map = translatableText.getTranslationMap();
-                assertEquals(languages.length, map.size());
+                assertEquals(languages.length+1, map.size());
             }
             long decodeDuration = System.currentTimeMillis() - startTime;
 
@@ -805,10 +767,8 @@ public class TranslatableTextTest {
     public void compareImplementations() throws IOException {
         int loops = 10;
         int size = 1_000_000;
-        measureEncodeDecode("old", t -> t.createEncodedValue(0), "en", "fr");
-        measureEncodeDecode("new", TranslatableText::getEncodedValue, "en", "fr");
-        measureEncodeDecode("len", t -> t.createEncodedValue(2), "en", "fr");
-        measureEncodeDecode("iso3", TranslatableText::getEncodedValue, "eng", "fra");
+        measureEncodeDecode("iso2", "en", "fr");
+        measureEncodeDecode("iso3", "eng", "fra");
 
         long fullTimeEncode = 0;
         long fullTimeDecode = 0;
